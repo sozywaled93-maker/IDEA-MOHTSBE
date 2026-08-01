@@ -680,7 +680,7 @@ export function WorkOrderModal({ q, suppliers, conferences, settings, t, onClose
       <div className="field" style={{ marginBottom: 12 }}>
         <label>{t('printLanguage')}</label>
         <div className="seg">
-          <button className={printLang === 'ar' ? 'active' : ''} onClick={() => setPrintLang('ar')}>عربي</button>
+          <button className={printLang === 'ar' ? 'active' : ''} onClick={() => setPrintLang('ar')}>{t('arabicLang')}</button>
           <button className={printLang === 'en' ? 'active' : ''} onClick={() => setPrintLang('en')}>English</button>
           <button className={printLang === 'both' ? 'active' : ''} onClick={() => setPrintLang('both')}>{t('bothLangs')}</button>
         </div>
@@ -754,7 +754,7 @@ function ExportModal({ quote, clients, settings, suppliers, onClose }) {
       </div>
       <div className="field"><label>{t('docLanguage')}</label>
         <div className="seg">
-          <button className={docLang === 'ar' ? 'active' : ''} onClick={() => setDocLang('ar')}>العربية</button>
+          <button className={docLang === 'ar' ? 'active' : ''} onClick={() => setDocLang('ar')}>{t('arabicLang')}</button>
           <button className={docLang === 'en' ? 'active' : ''} onClick={() => setDocLang('en')}>English</button>
           <button className={docLang === 'both' ? 'active' : ''} onClick={() => setDocLang('both')}>{t('bothLangs')}</button>
         </div>
