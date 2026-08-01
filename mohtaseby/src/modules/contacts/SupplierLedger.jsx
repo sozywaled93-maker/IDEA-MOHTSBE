@@ -282,11 +282,11 @@ export default function SupplierLedger({ supplier, onClose }) {
                 onChange={(e) => setPayForm((p) => ({ ...p, pay_date: e.target.value }))} /></div>
             <div className="field"><label>{t('paymentMethod')}</label>
               <select value={payForm.method} onChange={(e) => setPayForm((p) => ({ ...p, method: e.target.value }))}>
-                <option value="cash">نقداً</option>
+                <option value="cash">{t('cashWord')}</option>
                 <option value="bank">{t('bank')}</option>
                 <option value="vodafone">{t('vodafone')}</option>
                 <option value="instapay">{t('instapay')}</option>
-                <option value="cheque">شيك</option>
+                <option value="cheque">{t('chequeWord')}</option>
               </select></div>
             <div className="field"><label>{t('conferences')}</label>
               <select value={payForm.conference_id} onChange={(e) => setPayForm((p) => ({ ...p, conference_id: e.target.value }))}>
