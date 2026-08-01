@@ -237,7 +237,7 @@ function OrderEditor({ o, t, patch, conferences, quotes, clients, employees, ven
       {/* ===== البيانات الأساسية ===== */}
       <div className="grid2">
         <div className="field"><label>{t('orderTitle')}</label>
-          <BlurInput value={o.title || ''} onCommit={(v) => patch(o.id, { title: v })} placeholder="تجهيز قاعة / تركيب شاشات..." /></div>
+          <BlurInput value={o.title || ''} onCommit={(v) => patch(o.id, { title: v })} placeholder={t('phWoTitle')} /></div>
 
         <div className="field"><label>{t('orderKey')}</label>
           <div style={{ display: 'flex', gap: 6 }}>
@@ -298,9 +298,9 @@ function OrderEditor({ o, t, patch, conferences, quotes, clients, employees, ven
           <input type="date" value={o.date_to || ''} onChange={(e) => patch(o.id, { date_to: e.target.value })} /></div>
 
         <div className="field"><label>{t('setupTime')}</label>
-          <BlurInput value={o.setup_time || ''} onCommit={(v) => patch(o.id, { setup_time: v })} placeholder="8:00 ص" /></div>
+          <BlurInput value={o.setup_time || ''} onCommit={(v) => patch(o.id, { setup_time: v })} placeholder={t('phSetupTime')} /></div>
         <div className="field"><label>{t('startTime')}</label>
-          <BlurInput value={o.start_time || ''} onCommit={(v) => patch(o.id, { start_time: v })} placeholder="10:00 ص" /></div>
+          <BlurInput value={o.start_time || ''} onCommit={(v) => patch(o.id, { start_time: v })} placeholder={t('phStartTime')} /></div>
 
         <div className="field" style={{ gridColumn: '1 / -1' }}>
           <label>{t('status')}</label>
