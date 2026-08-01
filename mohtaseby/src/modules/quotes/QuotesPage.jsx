@@ -72,9 +72,10 @@ export default function QuotesPage() {
   const [hallPicker, setHallPicker] = useState(false)
   const norm = (x) => String(x || '').trim().toLowerCase()
   const venueHalls = useMemo(() => {
+    if (!q?.location) return []
     const v = venues.find((x) => norm(x.hotel_name) === norm(q.location))
     return (v?.halls || []).filter((h) => h?.name)
-  }, [venues, q.location])
+  }, [venues, q?.location])
   const addHall = (nameArg) => {
     const name = typeof nameArg === 'string' ? nameArg : prompt(t('enterHallName'))
     if (!name?.trim()) return
