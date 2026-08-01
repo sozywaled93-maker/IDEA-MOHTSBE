@@ -69,8 +69,9 @@ export default function QuotesPage() {
   const supName = (id) => suppliers.find((s) => s.id === id)?.supplier_name || ''
 
   // ===== إدارة القاعات =====
-  const addHall = () => {
-    const name = prompt(t('enterHallName'))
+  const [hallPicker, setHallPicker] = useState(false)
+  const addHall = (nameArg) => {
+    const name = typeof nameArg === 'string' ? nameArg : prompt(t('enterHallName'))
     if (!name?.trim()) return
     const dd = defaultDays()
     setQ((p) => ({
@@ -100,6 +101,7 @@ export default function QuotesPage() {
     return 1
   }
   const addRow = () => setQ((p) => {
+    if (!p.halls.length) { alert(t('addHallFirst')); return p }
     const dd = defaultDays()
     const cells = {}
     for (const h of p.halls) cells[h.key] = { days: dd }
@@ -418,8 +420,34 @@ export default function QuotesPage() {
 
       <div className="toolbar">
         <button className="add-btn" onClick={addRow}>+ {t('addRow')}</button>
-        <button className="add-btn" onClick={addHall}>+ {t('addHall')}</button>
+        <button className="add-btn" onClick={() => setHallPicker(true)}>+ {t('addHall')}</button>
       </div>
+
+      {hallPicker && (
+        <Modal title={`🏛 ${t('addHall')}`} onClose={() => setHallPicker(false)}>
+          {(() => {
+            const v = venues.find((x) => x.hotel_name === q.location)
+            const halls = (v?.halls || []).filter((h) => h?.name)
+            const used = new Set(q.halls.map((h) => h.name))
+            const free = halls.filter((h) => !used.has(h.name))
+            return (
+              <>
+                {!q.location && <p className="hint-inline">{t('pickVenueFirst')}</p>}
+                {q.location && !halls.length && <p className="hint-inline">{t('noHallsForVenue')}</p>}
+                {free.map((h, i) => (
+                  <div className="manage-row" key={i}>
+                    <span>🏛 <b>{h.name}</b>{h.max_width ? <small className="hint-inline"> ({h.max_width}×{h.max_height} م)</small> : null}</span>
+                    <button className="mini-btn ok" onClick={() => { addHall(h.name); setHallPicker(false) }}>+ {t('add')}</button>
+                  </div>
+                ))}
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
+                  <button className="save-btn" onClick={() => { setHallPicker(false); addHall() }}>✏️ {t('newHallName')}</button>
+                </div>
+              </>
+            )
+          })()}
+        </Modal>
+      )}
 
       {q.halls.length === 0 ? (
         <div className="placeholder">🏛 {t('addHallFirst')}</div>
@@ -588,6 +616,74 @@ export function WorkOrderModal({ q, suppliers, conferences, settings, t, onClose
   const [selected, setSelected] = useState(() => new Set(supplierIds))
   const toggle = (sid) => setSelected((p) => { const s = new Set(p); s.has(sid) ? s.delete(sid) : s.add(sid); return s })
 
+  const [saving, setSaving] = useState(false)
+  const [savedMsg, setSavedMsg] = useState('')
+
+  // توليد أوامر شغل حقيقية في جدول work_orders — أمر لكل مورد مختار
+  const generateWorkOrders = async () => {
+    const ids = [...selected]
+    if (!ids.length) return
+    setSaving(true)
+    try {
+      const { listRows, insertRow, updateRow, deleteRow } = await import('../../lib/db.js')
+      const existing = await listRows('work_orders').catch(() => [])
+      let created = 0, updated = 0
+
+      for (const sid of ids) {
+        const sup = suppliers.find((x) => x.id === sid)
+        const rows = bySupplier[sid] || []
+        const payload = {
+          quote_id: q.id,
+          conference_id: q.conference_id || null,
+          client_id: q.client_id || null,
+          supplier_id: sid,
+          title: (sup?.supplier_name || '') + ' — ' + (q.conference_name || ''),
+          location: conf ? [conf.location, conf.hall_name].filter(Boolean).join(' — ') : (q.location || ''),
+          date_from: q.date_from || null,
+          date_to: q.date_to || null,
+          setup_time: setupDate,
+          status: 'open',
+        }
+
+        // نبحث عن أمر سابق لنفس (العرض + المورد) فنحدّثه بدل تكراره
+        const prev = existing.find((w) => w.quote_id === q.id && w.supplier_id === sid)
+        let woId
+        if (prev) {
+          await updateRow('work_orders', prev.id, payload)
+          woId = prev.id
+          updated++
+          const oldItems = await listRows('work_order_items').catch(() => [])
+          for (const it of oldItems.filter((x) => x.work_order_id === prev.id)) {
+            await deleteRow('work_order_items', it.id).catch(() => {})
+          }
+        } else {
+          const r = await insertRow('work_orders', payload)
+          woId = r?.id
+          created++
+        }
+
+        if (!woId) continue
+        let order = 0
+        for (const it of rows) {
+          await insertRow('work_order_items', {
+            work_order_id: woId,
+            item_name: it.name || '',
+            qty: +it.qty || 0,
+            unit: it.unit || '',
+            days: 1,
+            note: it.note || '',
+            sort_order: order++,
+          }).catch(() => {})
+        }
+      }
+      setSavedMsg(t('woGenerated').replace('{n}', created + updated))
+    } catch (e) {
+      alert(t('woGenerateFailed') + ' ' + (e?.message || ''))
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const [printLang, setPrintLang] = useState('ar')   // ar | en | both
   const conf = conferences.find((c) => c.id === q.conference_id)
   const setupDate = q.date_from ? new Date(new Date(q.date_from).getTime() - 864e5).toISOString().slice(0, 10) : '—'
@@ -710,7 +806,11 @@ export function WorkOrderModal({ q, suppliers, conferences, settings, t, onClose
           </div>
         )
       })}
-      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+      {savedMsg && <p className="hint-inline" style={{ color: '#0F6E56' }}>✅ {savedMsg}</p>}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
+        <button className="add-btn" onClick={generateWorkOrders} disabled={saving || ![...selected].length}>
+          {saving ? '⏳' : '🛠'} {t('sendToWorkOrders')} ({selected.size})
+        </button>
         <button className="save-btn" onClick={printSelected} disabled={![...selected].length}>🖨 {t('printWorkOrder')} ({selected.size})</button>
       </div>
     </Modal>

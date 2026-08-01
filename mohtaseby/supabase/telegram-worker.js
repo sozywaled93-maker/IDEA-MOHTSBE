@@ -2,42 +2,37 @@
  * ================================================================
  * IDEA 360° — Telegram Bot Webhook (Cloudflare Worker) — v3.5
  * ================================================================
- * مطابق حرفياً لـ schema.sql + telegram-upgrade.sql
- *
- * المزايا:
- *  🧾 أوامر الشغل      — الموظف يشوف المسند له / الأدمن يشوف الكل
- *  🔑 فتح أمر شغل      — الموظف يبعت المفتاح فيشوف التفاصيل والبنود
- *  📦 أذون خروج المخازن — للأدمن (جدول exit_permits)
- *  💼 الحسابات والمصاريف — للأدمن + الموظف المصرّح له
- *  💰 تسجيل مصروف      — يختار إيفنت ثم يبعت "1000 بنزين"
- *  🔗 الدعوة بلينك      — t.me/BOT?start=inv_CODE
- *  ❌ اتشال /linkadmin نهائياً
- *
  * النشر:
- *  1) Cloudflare → Workers & Pages → Create Worker → Edit code → الصق الملف
- *  2) عدّل الأربع قيم تحت
+ *  1) Cloudflare → Workers & Pages → mohtasbetest → Edit code
+ *  2) امسح كل الكود القديم والصق ده مكانه
  *  3) Save and deploy
- *  4) https://api.telegram.org/bot<TOKEN>/setWebhook?url=<WORKER_URL>
  * ================================================================
  */
 
-const BOT_TOKEN = 'ضع_توكن_البوت_هنا'
-const SUPABASE_URL = 'https://xxxxxxxxxxxxx.supabase.co'
-// ⚠️ service_role key — البوت بيكتب في الجداول
-const SUPABASE_KEY = 'ضع_مفتاح_service_role_هنا'
+const BOT_TOKEN = '8632771411:AAFfxsAoATVFhIZmfeBxQi_CFsuAeFre3eU'
+const SUPABASE_URL = 'https://avfooxzwzlvmxockdngv.supabase.co'
+// مفتاح service_role (JWT) — نفس المفتاح المستخدم في سكربت النقل
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF2Zm9veHp3emx2bXhvY2tkbmd2Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4NTM5ODExMSwiZXhwIjoyMTAwOTc0MTExfQ._rCeepbQZOzXfzAes5SW7TtgEccHG7kVEyraMTcGn4g'
 
 /* ================================================================ */
 export default {
   async fetch(request) {
+    // فتح الرابط في المتصفح = صفحة فحص تعرض حالة الاتصال بـ Supabase
     if (request.method !== 'POST') {
-      return new Response('IDEA 360 Telegram Webhook v3.5 is running', { status: 200 })
+      const res = await sbFetch('employees?select=id&limit=1', 'GET')
+      const body = await res.text()
+      return new Response(
+        'IDEA 360 Telegram Webhook v3.5 is running\n' +
+        'Supabase status: ' + res.status + '\n' + body.slice(0, 400),
+        { status: 200, headers: { 'Content-Type': 'text/plain; charset=utf-8' } }
+      )
     }
     try {
       const update = await request.json()
       if (update.callback_query) await handleCallback(update.callback_query)
       else if (update.message) await handleMessage(update.message)
     } catch (err) {
-      console.error('Webhook error:', err)
+      console.error('Webhook error:', err && err.stack ? err.stack : err)
     }
     return new Response('ok', { status: 200 })
   },
@@ -63,8 +58,14 @@ async function handleMessage(message) {
     return requestPhoneShare(chatId, firstName)
   }
 
-  // وسط عملية جارية
-  const st = await getState(chatId)
+  // أزرار القائمة تلغي أي عملية جارية — تمنع ابتلاع الزرار كمفتاح أو كمبلغ
+  const MENU = ['📋 مهامي', '🎪 الإيفنتات القادمة', '⚠ تنبيهات الضرائب',
+    '🧾 أوامر الشغل', '📦 أذون خروج المخازن', '💼 الحسابات والمصاريف',
+    '💰 تسجيل مصروف', '🔑 فتح أمر شغل',
+    '📊 كشف حسابات الموردين', '📋 بنود وأسعار المورد']
+  if (MENU.includes(text)) await clearState(chatId)
+
+  const st = MENU.includes(text) ? { state: '', data: {} } : await getState(chatId)
   if (st.state === 'expense_amount') {
     if (text === '❌ إنهاء التسجيل') {
       await clearState(chatId)
@@ -78,19 +79,20 @@ async function handleMessage(message) {
   }
 
   switch (text) {
-    case '📋 مهامي':                return sendMyTasks(chatId)
-    case '🎪 الإيفنتات القادمة':    return sendUpcomingEvents(chatId)
-    case '⚠️ تنبيهات الضرائب':      return sendTaxAlerts(chatId)
-    case '🧾 أوامر الشغل':          return sendWorkOrders(chatId)
-    case '📦 أذون خروج المخازن':    return sendExitPermits(chatId)
-    case '💼 الحسابات والمصاريف':   return sendFinance(chatId)
-    case '💰 تسجيل مصروف':          return startExpenseFlow(chatId)
+    case '📋 مهامي': return sendMyTasks(chatId)
+    case '🎪 الإيفنتات القادمة': return sendUpcomingEvents(chatId)
+    case '⚠ تنبيهات الضرائب': return sendTaxAlerts(chatId)
+    case '🧾 أوامر الشغل': return sendWorkOrders(chatId)
+    case '📦 أذون خروج المخازن': return sendExitPermits(chatId)
+    case '💼 الحسابات والمصاريف': return sendFinance(chatId)
+    case '💰 تسجيل مصروف': return startExpenseFlow(chatId)
+    case '📊 كشف حسابات الموردين': return sendSupplierLedgerList(chatId)
+    case '📋 بنود وأسعار المورد': return sendSupplierPricesList(chatId)
     case '🔑 فتح أمر شغل':
       await setState(chatId, 'awaiting_order_key', {})
       return sendMsg(chatId, '🔑 ابعت مفتاح أمر الشغل (زي <code>A1B2C3</code>) وهجيبلك كل تفاصيله.')
   }
 
-  // كود أمر شغل مباشر بدون ضغط الزر
   if (/^[A-Za-z0-9\-_]{4,20}$/.test(text)) {
     if (await sendWorkOrderByKey(chatId, text, true)) return
   }
@@ -110,7 +112,7 @@ async function handleCallback(cq) {
     const ok = await updateRow('tasks', data.slice(9), {
       done: true, completed_via_bot: true, completed_at: new Date().toISOString(),
     })
-    await answerCallback(cq.id, ok ? '✅ تم تسجيل الإنجاز' : '⚠️ حصل خطأ، حاول تاني')
+    await answerCallback(cq.id, ok ? '✅ تم تسجيل الإنجاز' : '⚠ حصل خطأ، حاول تاني')
     if (ok) await editMessage(chatId, messageId, (cq.message.text || '') + '\n\n✅ تم الإنجاز')
     return
   }
@@ -123,6 +125,16 @@ async function handleCallback(cq) {
   if (data.startsWith('ep:')) {
     await answerCallback(cq.id, '')
     return sendExitPermitById(chatId, data.slice(3))
+  }
+
+  if (data.startsWith('supLed:')) {
+    await answerCallback(cq.id, '')
+    return sendSupplierLedgerById(chatId, data.slice(7))
+  }
+
+  if (data.startsWith('supPrc:')) {
+    await answerCallback(cq.id, '')
+    return sendSupplierPricesById(chatId, data.slice(7))
   }
 
   if (data.startsWith('expEvent:')) {
@@ -154,19 +166,24 @@ async function buildKeyboard(chatId) {
   }
 
   if (who.admin) {
-    rows.push([{ text: '📦 أذون خروج المخازن' }, { text: '⚠️ تنبيهات الضرائب' }])
+    rows.push([{ text: '📦 أذون خروج المخازن' }, { text: '⚠ تنبيهات الضرائب' }])
     rows.push([{ text: '💼 الحسابات والمصاريف' }, { text: '💰 تسجيل مصروف' }])
+    rows.push([{ text: '📊 كشف حسابات الموردين' }, { text: '📋 بنود وأسعار المورد' }])
   } else if (who.employee) {
     const fin = []
     if (who.employee.can_view_finance) fin.push({ text: '💼 الحسابات والمصاريف' })
     if (who.employee.can_view_finance || who.employee.can_log_expense) fin.push({ text: '💰 تسجيل مصروف' })
     if (fin.length) rows.push(fin)
+
+    const sup = []
+    if (who.employee.can_view_supplier_ledger) sup.push({ text: '📊 كشف حسابات الموردين' })
+    if (who.employee.can_view_supplier_prices) sup.push({ text: '📋 بنود وأسعار المورد' })
+    if (sup.length) rows.push(sup)
   }
 
   return { keyboard: rows, resize_keyboard: true }
 }
 
-// بيرجع { admin, employee } — مع كاش داخل نفس الطلب
 async function whoIs(chatId) {
   const users = await fetchTable('app_users')
   const admin = users.find((u) => u.is_admin && String(u.telegram_chat_id) === chatId)
@@ -208,11 +225,11 @@ async function sendWorkOrders(chatId) {
 
 async function sendWorkOrderById(chatId, id) {
   const wo = (await fetchTable('work_orders')).find((w) => w.id === id)
-  if (!wo) return sendMsg(chatId, '⚠️ أمر الشغل غير موجود.')
+  if (!wo) return sendMsg(chatId, '⚠ أمر الشغل غير موجود.')
 
   const who = await whoIs(chatId)
   if (!who.admin && (!who.employee || wo.employee_id !== who.employee.id)) {
-    return sendMsg(chatId, '⚠️ أمر الشغل ده مش مسند ليك.')
+    return sendMsg(chatId, '⚠ أمر الشغل ده مش مسند ليك.')
   }
 
   const [items, confs, clients, emps, venues] = await Promise.all([
@@ -246,10 +263,10 @@ async function sendWorkOrderById(chatId, id) {
     lines.push('\n<b>📋 البنود (' + myItems.length + '):</b>')
     myItems.forEach((it, i) => {
       lines.push(
-        (it.done ? '✅ ' : '▫️ ') + (i + 1) + '. <b>' + esc(it.item_name) + '</b> — ' +
+        (it.done ? '✅ ' : '▫ ') + (i + 1) + '. <b>' + esc(it.item_name) + '</b> — ' +
         num(it.qty) + ' ' + esc(it.unit || '') +
         (Number(it.days) > 1 ? ' × ' + num(it.days) + ' يوم' : '') +
-        (it.note ? '\n     📝 ' + esc(it.note) : '')
+        (it.note ? '\n 📝 ' + esc(it.note) : '')
       )
     })
   }
@@ -271,7 +288,7 @@ async function sendWorkOrderByKey(chatId, key, silent) {
   const wo = (await fetchTable('work_orders'))
     .find((w) => (w.order_key || '').toLowerCase() === key.toLowerCase())
   if (!wo) {
-    if (!silent) await sendMsg(chatId, '⚠️ مفيش أمر شغل بالمفتاح ده: <code>' + esc(key) + '</code>')
+    if (!silent) await sendMsg(chatId, '⚠ مفيش أمر شغل بالمفتاح ده: <code>' + esc(key) + '</code>')
     return false
   }
   await sendWorkOrderById(chatId, wo.id)
@@ -279,11 +296,11 @@ async function sendWorkOrderByKey(chatId, key, silent) {
 }
 
 /* ================================================================
- * أذون خروج المخازن (exit_permits) — للأدمن
+ * أذون خروج المخازن
  * ================================================================ */
 async function sendExitPermits(chatId) {
   const who = await whoIs(chatId)
-  if (!who.admin) return sendMsg(chatId, '⚠️ الخاصية دي للإدارة فقط.')
+  if (!who.admin) return sendMsg(chatId, '⚠ الخاصية دي للإدارة فقط.')
 
   const permits = await fetchTable('exit_permits')
   if (!permits.length) return sendMsg(chatId, '📭 لا توجد أذون خروج مسجلة.')
@@ -307,10 +324,10 @@ async function sendExitPermits(chatId) {
 
 async function sendExitPermitById(chatId, id) {
   const who = await whoIs(chatId)
-  if (!who.admin) return sendMsg(chatId, '⚠️ الخاصية دي للإدارة فقط.')
+  if (!who.admin) return sendMsg(chatId, '⚠ الخاصية دي للإدارة فقط.')
 
   const p = (await fetchTable('exit_permits')).find((x) => x.id === id)
-  if (!p) return sendMsg(chatId, '⚠️ الإذن غير موجود.')
+  if (!p) return sendMsg(chatId, '⚠ الإذن غير موجود.')
 
   const [confs, emps, units, items, recips] = await Promise.all([
     fetchTable('conferences'), fetchTable('employees'),
@@ -321,7 +338,6 @@ async function sendExitPermitById(chatId, id) {
 
   const conf = confs.find((c) => c.id === p.conference_id)
   const emp = emps.find((e) => e.id === p.employee_id)
-  // القطع: من unit_ids أو من inventory_units.permit_id (البرنامج يستخدم الاثنين)
   let unitIds = Array.isArray(p.unit_ids) ? p.unit_ids : []
   if (!unitIds.length) unitIds = units.filter((u) => u.permit_id === p.id).map((u) => u.id)
   const returned = Array.isArray(p.returned_ids) ? p.returned_ids : []
@@ -367,7 +383,7 @@ async function sendExitPermitById(chatId, id) {
 async function sendFinance(chatId) {
   const who = await whoIs(chatId)
   if (!who.admin && !(who.employee && who.employee.can_view_finance)) {
-    return sendMsg(chatId, '⚠️ ملكش صلاحية على الحسابات والمصاريف. كلّم الإدارة تفعّلهالك.')
+    return sendMsg(chatId, '⚠ ملكش صلاحية على الحسابات والمصاريف. كلّم الإدارة تفعّلهالك.')
   }
 
   const [expenses, incomes, confs] = await Promise.all([
@@ -386,8 +402,7 @@ async function sendFinance(chatId) {
   }
   let totalInc = 0
   for (const i of incomes) {
-    const amt = Number(i.amount) || 0
-    totalInc += amt
+    totalInc += Number(i.amount) || 0
   }
 
   const lines = Object.entries(byEvent)
@@ -395,7 +410,7 @@ async function sendFinance(chatId) {
     .slice(0, 15)
     .map(([id, v]) => {
       const c = confs.find((x) => x.id === id)
-      return '🎪 <b>' + esc(c?.name || 'بدون إيفنت') + '</b>\n   💸 ' + money(v.exp) + ' — ' + v.count + ' بند'
+      return '🎪 <b>' + esc(c?.name || 'بدون إيفنت') + '</b>\n 💸 ' + money(v.exp) + ' — ' + v.count + ' بند'
     })
 
   await sendMsg(chatId,
@@ -407,13 +422,10 @@ async function sendFinance(chatId) {
     '<b>المصاريف حسب الإيفنت:</b>\n\n' + lines.join('\n\n'))
 }
 
-/* ================================================================
- * تسجيل مصروف
- * ================================================================ */
 async function startExpenseFlow(chatId) {
   const who = await whoIs(chatId)
   if (!who.admin && !(who.employee && (who.employee.can_log_expense || who.employee.can_view_finance))) {
-    return sendMsg(chatId, '⚠️ ملكش صلاحية تسجيل مصاريف. كلّم الإدارة تفعّلهالك.')
+    return sendMsg(chatId, '⚠ ملكش صلاحية تسجيل مصاريف. كلّم الإدارة تفعّلهالك.')
   }
 
   const confs = await fetchTable('conferences')
@@ -428,7 +440,6 @@ async function startExpenseFlow(chatId) {
   await sendMsg(chatId, '💰 <b>تسجيل مصروف</b>\n\nاختار الإيفنت الأول:', undefined, { inline_keyboard: buttons })
 }
 
-// يفهم: "1000 بنزين" / "بنزين 1000" / "500 فطار للفريق"
 function parseExpense(text) {
   const m = text.match(/(\d+(?:[.,]\d+)?)/)
   if (!m) return null
@@ -441,12 +452,11 @@ function parseExpense(text) {
 async function saveExpenseFromText(chatId, text, data) {
   const parsed = parseExpense(text)
   if (!parsed) {
-    return sendMsg(chatId, '⚠️ مش فاهم. اكتب المبلغ والبيان كده:\n<code>1000 بنزين</code>', expenseKeyboard())
+    return sendMsg(chatId, '⚠ مش فاهم. اكتب المبلغ والبيان كده:\n<code>1000 بنزين</code>', expenseKeyboard())
   }
 
   const who = await whoIs(chatId)
 
-  // شاشة الخزنة في البرنامج تفلتر بـ quote_id — نربط المصروف بأقرب عرض للإيفنت
   let quoteId = null
   if (data.conference_id) {
     const q = (await fetchTable('quotes')).find((x) => x.conference_id === data.conference_id)
@@ -466,7 +476,7 @@ async function saveExpenseFromText(chatId, text, data) {
     handed_to: who.employee ? who.employee.id : null,
   })
 
-  if (!ok) return sendMsg(chatId, '⚠️ حصلت مشكلة في الحفظ. حاول تاني.', expenseKeyboard())
+  if (!ok) return sendMsg(chatId, '⚠ حصلت مشكلة في الحفظ. حاول تاني.', expenseKeyboard())
 
   await sendMsg(chatId,
     '✅ <b>اتسجل</b>\n' +
@@ -477,13 +487,13 @@ async function saveExpenseFromText(chatId, text, data) {
 }
 
 /* ================================================================
- * الدعوات بلينك
+ * الدعوات والربط
  * ================================================================ */
 async function acceptInvite(chatId, code, firstName) {
   const inv = (await fetchTable('telegram_invites')).find((i) => i.code === code)
-  if (!inv) return sendMsg(chatId, '⚠️ رابط الدعوة غير صالح. كلّم الإدارة.', null)
+  if (!inv) return sendMsg(chatId, '⚠ رابط الدعوة غير صالح. كلّم الإدارة.', null)
   if (inv.used && String(inv.chat_id) !== chatId) {
-    return sendMsg(chatId, '⚠️ رابط الدعوة ده اتستخدم قبل كده.', null)
+    return sendMsg(chatId, '⚠ رابط الدعوة ده اتستخدم قبل كده.', null)
   }
 
   const table = { supplier: 'suppliers', recipient: 'recipients', app_user: 'app_users' }[inv.target_type] || 'employees'
@@ -500,15 +510,12 @@ async function acceptInvite(chatId, code, firstName) {
     'استخدم الأزرار تحت في أي وقت.')
 }
 
-/* ================================================================
- * الربط بالرقم (طريقة احتياطية)
- * ================================================================ */
 async function linkByPhone(chatId, phone, firstName) {
   const now = new Date().toISOString()
   const targets = [
-    { table: 'employees',  nameCol: 'name',          msg: 'تم ربط حسابك بنجاح بنظام <b>IDEA 360°</b>.' },
-    { table: 'suppliers',  nameCol: 'supplier_name', msg: 'تم ربط حسابكم كمورد معتمد لدى <b>IDEA 360°</b>.' },
-    { table: 'recipients', nameCol: 'name',          msg: 'تم ربط حسابك. هتوصلك إشعارات الاستلام وتذكيرات الإرجاع.' },
+    { table: 'employees', nameCol: 'name', msg: 'تم ربط حسابك بنجاح بنظام <b>IDEA 360°</b>.' },
+    { table: 'suppliers', nameCol: 'supplier_name', msg: 'تم ربط حسابكم كمورد معتمد لدى <b>IDEA 360°</b>.' },
+    { table: 'recipients', nameCol: 'name', msg: 'تم ربط حسابك. هتوصلك إشعارات الاستلام وتذكيرات الإرجاع.' },
   ]
 
   for (const t of targets) {
@@ -588,7 +595,7 @@ function taxDeadline(dateStr) {
 
 async function sendTaxAlerts(chatId) {
   const who = await whoIs(chatId)
-  if (!who.admin) return sendMsg(chatId, '⚠️ الخاصية دي للإدارة فقط.')
+  if (!who.admin) return sendMsg(chatId, '⚠ الخاصية دي للإدارة فقط.')
 
   const today = new Date(); today.setHours(0, 0, 0, 0)
   const alerts = []
@@ -612,11 +619,229 @@ async function sendTaxAlerts(chatId) {
 
   alerts.sort((a, b) => a.left - b.left)
   const lines = alerts.slice(0, 20).map((a) => {
-    const when = a.left < 0 ? 'متأخر ' + Math.abs(a.left) + ' يوم ⚠️' : a.left === 0 ? 'اليوم' : 'باقي ' + a.left + ' يوم'
+    const when = a.left < 0 ? 'متأخر ' + Math.abs(a.left) + ' يوم ⚠' : a.left === 0 ? 'اليوم' : 'باقي ' + a.left + ' يوم'
     return '🎪 <b>' + esc(a.name) + '</b>\n📅 آخر موعد: ' + a.deadline.toISOString().slice(0, 10) + ' (' + when + ')\n' +
       '📑 الإقرار: ' + (a.filed ? '✅ تم' : '❌ لم يُرفع') + '\n💳 السداد: ' + (a.paid ? '✅ تم' : '❌ لم يُسدَّد')
   })
   await sendMsg(chatId, lines.join('\n\n'))
+}
+
+/* ================================================================
+ * كشف حساب الموردين + بنودهم وأسعارهم
+ * ================================================================ */
+
+// نفس حسابات صفحة كشف الحساب في البرنامج حرفياً
+const invTotal = (inv) => (inv.items || []).reduce((s, i) => s + (+i.qty || 0) * (+i.price || 0) * (+i.days || 1), 0)
+const invPaid = (inv) => (inv.payments || []).reduce((s, p) => s + (+p.amount || 0), 0)
+const withVat = (inv, sup) => invTotal(inv) * (inv.is_taxable ? 1 + (+(sup?.tax_rate ?? 14)) / 100 : 1)
+
+// السحب التلقائي من فواتير المؤتمرات المنتهية
+function autoPulls(supplierId, quotes) {
+  const out = []
+  for (const q of quotes) {
+    if (q.doc_type !== 'invoice' || !q.finished) continue
+    let d = {}
+    try { d = typeof q.data === 'string' ? JSON.parse(q.data || '{}') : (q.data || {}) } catch (e) { d = {} }
+    const items = []
+    for (const it of (d.items || [])) {
+      if (it.supplier_id !== supplierId) continue
+      let qty = 0, cost = 0, days = 0
+      for (const h of (d.halls || [])) {
+        const c = (it.cells && it.cells[h.key]) || {}
+        qty += +c.units || 0
+        days = Math.max(days, +c.days || 0)
+        cost += (+c.units || 0) * (+it.cost_price || 0) * (+c.days || 0)
+      }
+      if (qty || cost) items.push({ name: it.item_name, qty, days, cost })
+    }
+    if (items.length) out.push({
+      conference: q.conference_name, date: q.date_from,
+      items, total: items.reduce((s, i) => s + i.cost, 0),
+    })
+  }
+  return out
+}
+
+// الموردون المسموح للمستخدم يشوفهم
+async function allowedSuppliers(who) {
+  const all = await fetchTable('suppliers')
+  if (who.admin) return all
+  const e = who.employee
+  if (!e) return []
+  if ((e.supplier_scope || 'all') === 'all') return all
+  const links = (await fetchTable('employee_suppliers')).filter((l) => l.employee_id === e.id)
+  const ids = new Set(links.map((l) => l.supplier_id))
+  return all.filter((s) => ids.has(s.id))
+}
+
+// إجمالي / مدفوع / باقي لمورد واحد
+async function supplierTotals(sup) {
+  const [quotes, invoices, payments, adjustments] = await Promise.all([
+    fetchTable('quotes'), fetchTable('supplier_invoices'),
+    fetchTable('supplier_payments'), fetchTable('supplier_adjustments'),
+  ])
+  const myInv = invoices.filter((x) => x.supplier_id === sup.id)
+  const myPay = payments.filter((x) => x.supplier_id === sup.id)
+  const myAdj = adjustments.filter((x) => x.supplier_id === sup.id)
+  const pulls = autoPulls(sup.id, quotes)
+
+  const auto = pulls.reduce((s, p) => s + p.total, 0)
+  const manual = myInv.reduce((s, i) => s + withVat(i, sup), 0)
+  const adj = myAdj.reduce((s, a) => s + (+a.amount || 0), 0)
+  const paid = myInv.reduce((s, i) => s + invPaid(i), 0) + myPay.reduce((s, p) => s + (+p.amount || 0), 0)
+
+  return { due: auto + manual + adj, paid, balance: auto + manual + adj - paid,
+           pulls, invoices: myInv, payments: myPay, adjustments: myAdj }
+}
+
+async function sendSupplierLedgerList(chatId) {
+  const who = await whoIs(chatId)
+  if (!who.admin && !(who.employee && who.employee.can_view_supplier_ledger)) {
+    return sendMsg(chatId, '⚠ ملكش صلاحية على كشف حسابات الموردين. كلّم الإدارة تفعّلهالك.')
+  }
+
+  const sups = await allowedSuppliers(who)
+  if (!sups.length) return sendMsg(chatId, '📭 مفيش موردين متاحين ليك.')
+
+  const rows = []
+  for (const sup of sups) {
+    const t = await supplierTotals(sup)
+    rows.push({ sup, balance: t.balance })
+  }
+  rows.sort((a, b) => b.balance - a.balance)
+
+  const totalDue = rows.reduce((s, r) => s + (r.balance > 0.01 ? r.balance : 0), 0)
+  const openCount = rows.filter((r) => r.balance > 0.01).length
+
+  const buttons = rows.slice(0, 40).map((r) => [{
+    text: (r.balance > 0.01 ? '🔴 ' : '🟢 ') + (r.sup.supplier_name || r.sup.company_name || 'مورد') +
+          (r.balance > 0.01 ? ' — باقي ' + money(r.balance) : ' — مقفول'),
+    callback_data: 'supLed:' + r.sup.id,
+  }])
+
+  await sendMsg(chatId,
+    '📊 <b>كشف حسابات الموردين</b>\n\n' +
+    '🔴 حسابات مفتوحة: ' + openCount + ' من ' + rows.length + '\n' +
+    '💰 إجمالي المستحق: <b>' + money(totalDue) + '</b>\n\n' +
+    'اختار مورد لعرض تفاصيله:',
+    undefined, { inline_keyboard: buttons })
+}
+
+async function sendSupplierLedgerById(chatId, id) {
+  const who = await whoIs(chatId)
+  if (!who.admin && !(who.employee && who.employee.can_view_supplier_ledger)) {
+    return sendMsg(chatId, '⚠ ملكش صلاحية على كشف حسابات الموردين.')
+  }
+
+  const sups = await allowedSuppliers(who)
+  const sup = sups.find((s) => s.id === id)
+  if (!sup) return sendMsg(chatId, '⚠ المورد غير موجود أو مش متاح ليك.')
+
+  const t = await supplierTotals(sup)
+  const confs = await fetchTable('conferences')
+  const confName = (cid) => (confs.find((c) => c.id === cid) || {}).name || ''
+
+  const lines = ['🏢 <b>' + esc(sup.supplier_name || sup.company_name || 'مورد') + '</b>']
+  if (sup.phone) lines.push('📞 <code>' + esc(sup.phone) + '</code>')
+
+  if (t.pulls.length) {
+    lines.push('\n<b>📄 من فواتير المؤتمرات:</b>')
+    t.pulls.slice(0, 15).forEach((p) => {
+      lines.push('• ' + esc(p.conference || 'بدون اسم') + (p.date ? ' — ' + p.date : '') + '\n   ' + money(p.total))
+    })
+  }
+
+  if (t.invoices.length) {
+    lines.push('\n<b>🧾 فواتير مسجلة يدوي:</b>')
+    t.invoices.slice(0, 15).forEach((i) => {
+      const nm = confName(i.conference_id) || i.free_conference || 'بدون إيفنت'
+      lines.push('• ' + esc(nm) + (i.invoice_date ? ' — ' + i.invoice_date : '') +
+        '\n   ' + money(withVat(i, sup)) + (i.is_taxable ? ' (شامل الضريبة)' : ''))
+    })
+  }
+
+  if (t.payments.length) {
+    lines.push('\n<b>💵 الدفعات:</b>')
+    t.payments.slice(0, 20).forEach((p) => {
+      lines.push('• ' + money(p.amount) + ' — ' + esc(p.method || 'كاش') +
+        (p.pay_date ? ' — ' + p.pay_date : '') + (p.note ? '\n   📝 ' + esc(p.note) : ''))
+    })
+  }
+
+  if (t.adjustments.length) {
+    lines.push('\n<b>⚖ تسويات:</b>')
+    t.adjustments.slice(0, 10).forEach((a) => {
+      lines.push('• ' + money(a.amount) + (a.reason ? ' — ' + esc(a.reason) : ''))
+    })
+  }
+
+  const closed = t.balance <= 0.01
+  lines.push('\n──────────────')
+  lines.push('📊 الإجمالي: <b>' + money(t.due) + '</b>')
+  lines.push('💵 المدفوع: <b>' + money(t.paid) + '</b>')
+  lines.push((closed ? '🟢 الحساب مقفول' : '🔴 الباقي: <b>' + money(t.balance) + '</b>'))
+
+  await sendMsg(chatId, lines.join('\n'))
+}
+
+async function sendSupplierPricesList(chatId) {
+  const who = await whoIs(chatId)
+  if (!who.admin && !(who.employee && who.employee.can_view_supplier_prices)) {
+    return sendMsg(chatId, '⚠ ملكش صلاحية على بنود وأسعار الموردين. كلّم الإدارة تفعّلهالك.')
+  }
+
+  const sups = await allowedSuppliers(who)
+  if (!sups.length) return sendMsg(chatId, '📭 مفيش موردين متاحين ليك.')
+
+  const buttons = sups.slice(0, 40).map((s) => [{
+    text: '🏢 ' + (s.supplier_name || s.company_name || 'مورد'),
+    callback_data: 'supPrc:' + s.id,
+  }])
+
+  await sendMsg(chatId, '📋 <b>بنود وأسعار المورد</b>\n\nاختار مورد:',
+    undefined, { inline_keyboard: buttons })
+}
+
+async function sendSupplierPricesById(chatId, id) {
+  const who = await whoIs(chatId)
+  if (!who.admin && !(who.employee && who.employee.can_view_supplier_prices)) {
+    return sendMsg(chatId, '⚠ ملكش صلاحية على بنود وأسعار الموردين.')
+  }
+
+  const sups = await allowedSuppliers(who)
+  const sup = sups.find((s) => s.id === id)
+  if (!sup) return sendMsg(chatId, '⚠ المورد غير موجود أو مش متاح ليك.')
+
+  const [mains, subs, prices, links] = await Promise.all([
+    fetchTable('library_main'), fetchTable('library_sub'),
+    fetchTable('sub_supplier_prices'), fetchTable('supplier_main_items'),
+  ])
+
+  const myMainIds = new Set(links.filter((x) => x.supplier_id === sup.id).map((x) => x.main_id))
+  const myMains = mains.filter((m) => myMainIds.has(m.id))
+
+  const lines = ['🏢 <b>' + esc(sup.supplier_name || sup.company_name || 'مورد') + '</b>']
+  if (sup.tax_rate && sup.adds_tax) lines.push('🧾 ضريبة: ' + num(sup.tax_rate) + '%')
+
+  let found = 0
+  for (const m of myMains) {
+    const mySubs = subs.filter((s) => s.main_id === m.id)
+    const priced = mySubs.map((s) => {
+      const p = prices.find((x) => x.sub_id === s.id && x.supplier_id === sup.id)
+      return { name: s.name, cost: p ? p.cost_price : null }
+    }).filter((x) => x.cost !== null && x.cost !== undefined)
+
+    if (!priced.length) continue
+    found += priced.length
+    lines.push('\n<b>📁 ' + esc(m.name) + '</b>')
+    priced.slice(0, 30).forEach((x) => {
+      lines.push('   ▫ ' + esc(x.name) + ' — <b>' + money(x.cost) + '</b>')
+    })
+  }
+
+  if (!found) lines.push('\n📭 مفيش بنود أو أسعار مسجلة للمورد ده.')
+
+  await sendMsg(chatId, lines.join('\n'))
 }
 
 /* ================================================================
@@ -661,6 +886,7 @@ function sbHeaders(extra) {
     'Content-Type': 'application/json',
   }, extra || {})
 }
+
 async function sbFetch(path, method, body, extraHeaders) {
   const res = await fetch(SUPABASE_URL + '/rest/v1/' + path, {
     method, headers: sbHeaders(extraHeaders), body: body ? JSON.stringify(body) : undefined,
@@ -668,13 +894,29 @@ async function sbFetch(path, method, body, extraHeaders) {
   if (!res.ok) console.error('Supabase ' + method + ' ' + path, res.status, await res.clone().text())
   return res
 }
+
+// يرجّع مصفوفة دائماً — لو فشل الطلب يرجّع [] بدل كائن الخطأ
 async function sbGet(path) {
-  try { return await (await sbFetch(path, 'GET')).json() } catch (e) { return [] }
+  try {
+    const res = await sbFetch(path, 'GET')
+    if (!res.ok) {
+      console.error('Supabase GET failed', path, res.status)
+      return []
+    }
+    const data = await res.json()
+    return Array.isArray(data) ? data : []
+  } catch (e) {
+    console.error('sbGet exception', path, e && e.stack ? e.stack : e)
+    return []
+  }
 }
+
 async function fetchTable(table) { return sbGet(table + '?select=*') }
+
 async function updateRow(table, id, patch) {
   return (await sbFetch(table + '?id=eq.' + id, 'PATCH', patch, { Prefer: 'return=minimal' })).ok
 }
+
 async function insertRow(table, row) {
   return (await sbFetch(table, 'POST', row, { Prefer: 'return=minimal' })).ok
 }
@@ -685,6 +927,7 @@ async function tg(method, payload) {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
   })
 }
+
 // keyboard: undefined = القائمة الافتراضية | null = بدون | كائن = مخصص
 async function sendMsg(chatId, text, keyboard, inline) {
   const markup = inline ? inline
@@ -692,9 +935,11 @@ async function sendMsg(chatId, text, keyboard, inline) {
     : keyboard === null ? undefined : keyboard
   await tg('sendMessage', { chat_id: chatId, text, parse_mode: 'HTML', reply_markup: markup })
 }
+
 async function answerCallback(id, text) {
   await tg('answerCallbackQuery', { callback_query_id: id, text: text || '', show_alert: false })
 }
+
 async function editMessage(chatId, messageId, text) {
   await tg('editMessageText', { chat_id: chatId, message_id: messageId, text, parse_mode: 'HTML' })
 }

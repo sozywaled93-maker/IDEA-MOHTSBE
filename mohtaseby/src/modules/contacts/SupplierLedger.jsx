@@ -265,14 +265,17 @@ export default function SupplierLedger({ supplier, onClose }) {
               <span>{p.pay_date} — <b style={{ color: '#0F6E56' }}>{fmt(p.amount)}</b> — {t(p.method) !== p.method ? t(p.method) : p.method === 'cash' ? 'نقداً' : p.method === 'cheque' ? 'شيك' : p.method}
                 {p.conference_id ? ` — ${conferences.find((c) => c.id === p.conference_id)?.name || ''}` : ''}
                 {p.note ? ` — ${p.note}` : ''}</span>
-              <button className="icon-btn" onClick={async () => { await deleteRow('supplier_payments', p.id); load() }}>✕</button>
+              <span style={{ display: 'flex', gap: 4 }}>
+                <button className="icon-btn" title={t('edit')} onClick={() => setPayForm({ ...p })}>✏️</button>
+                <button className="icon-btn" onClick={async () => { if (confirm(t('confirmDelete'))) { await deleteRow('supplier_payments', p.id); load() } }}>✕</button>
+              </span>
             </div>
           ))}
         </div>
       )}
 
       {payForm && (
-        <Modal title={t('addPayment')} onClose={() => setPayForm(null)}>
+        <Modal title={payForm.id ? t('editPayment') : t('addPayment')} onClose={() => setPayForm(null)}>
           <div className="grid2">
             <div className="field"><label>{t('amount')} *</label>
               <input type="number" dir="ltr" min="0" autoFocus value={payForm.amount}
@@ -299,25 +302,15 @@ export default function SupplierLedger({ supplier, onClose }) {
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}>
             <button className="save-btn" onClick={async () => {
               if (!+payForm.amount) return
-              await insertRow('supplier_payments', { ...payForm, supplier_id: supplier.id, conference_id: payForm.conference_id || null, amount: +payForm.amount })
+              const body = { supplier_id: supplier.id, amount: +payForm.amount,
+                conference_id: payForm.conference_id || null, method: payForm.method,
+                pay_date: payForm.pay_date, note: payForm.note || '' }
+              if (payForm.id) await updateRow('supplier_payments', payForm.id, body)
+              else await insertRow('supplier_payments', body)
               setPayForm(null); load()
             }}>{t('save')}</button>
           </div>
         </Modal>
-      )}
-
-      {payments.length > 0 && (
-        <div className="card" style={{ padding: 14 }}>
-          <h3 style={{ fontSize: 14 }}>💵 {t('payments')}</h3>
-          {payments.map((p) => (
-            <div className="manage-row" key={p.id}>
-              <span>{p.pay_date} — <b style={{ color: '#0F6E56' }}>{fmt(p.amount)}</b> — {t(p.method) !== p.method ? t(p.method) : p.method === 'cash' ? 'نقداً' : p.method === 'cheque' ? 'شيك' : p.method}
-                {p.conference_id ? ` — ${conferences.find((c) => c.id === p.conference_id)?.name || ''}` : ''}
-                {p.note ? ` — ${p.note}` : ''}</span>
-              <button className="icon-btn" onClick={async () => { await deleteRow('supplier_payments', p.id); load() }}>✕</button>
-            </div>
-          ))}
-        </div>
       )}
 
 
