@@ -28,6 +28,59 @@ export default function WorkOrdersPage() {
   const [empFilter, setEmpFilter] = useState('all')
   const [inviteResult, setInviteResult] = useState(null)
 
+  const [syncing, setSyncing] = useState(false)
+
+  // مزامنة تلقائية: كل عرض سعر فيه موردين => أمر شغل لكل مورد
+  const syncFromQuotes = async () => {
+    setSyncing(true)
+    try {
+      const [qs, wos, sups, confs] = await Promise.all([
+        listRows('quotes').catch(() => []), listRows('work_orders').catch(() => []),
+        listRows('suppliers').catch(() => []), listRows('conferences').catch(() => []),
+      ])
+      let touched = 0
+      for (const q of qs) {
+        let d = {}
+        try { d = typeof q.data === 'string' ? JSON.parse(q.data || '{}') : (q.data || {}) } catch { d = {} }
+        const halls = d.halls || [], qItems = d.items || []
+        // تجميع بنود كل مورد
+        const bySup = {}
+        for (const it of qItems) {
+          if (!it.supplier_id) continue
+          let qty = 0
+          for (const h of halls) qty += +(it.cells?.[h.key]?.units || 0)
+          if (!qty && !it.item_name) continue
+          ;(bySup[it.supplier_id] ||= []).push({ name: it.item_name, note: it.item_note, qty, unit: it.unit || '' })
+        }
+        const conf = confs.find((c) => c.id === q.conference_id)
+        for (const [sid, rows] of Object.entries(bySup)) {
+          const prev = wos.find((w) => w.quote_id === q.id && w.supplier_id === sid)
+          if (prev) continue   // موجود بالفعل — لا نلمسه حتى لا نضيع تعديلات المستخدم
+          const sup = sups.find((x) => x.id === sid)
+          const r = await insertRow('work_orders', {
+            quote_id: q.id, conference_id: q.conference_id || null, client_id: q.client_id || null,
+            supplier_id: sid,
+            title: (sup?.supplier_name || '') + ' — ' + (q.conference_name || ''),
+            location: conf ? [conf.location, conf.hall_name].filter(Boolean).join(' — ') : (q.location || ''),
+            date_from: q.date_from || null, date_to: q.date_to || null,
+            setup_time: q.date_from ? new Date(new Date(q.date_from).getTime() - 864e5).toISOString().slice(0, 10) : '',
+            status: 'open',
+          }).catch(() => null)
+          if (!r?.id) continue
+          touched++
+          let o = 0
+          for (const it of rows) {
+            await insertRow('work_order_items', {
+              work_order_id: r.id, item_name: it.name || '', qty: +it.qty || 0,
+              unit: it.unit || '', days: 1, note: it.note || '', sort_order: o++,
+            }).catch(() => {})
+          }
+        }
+      }
+      if (touched) load()
+    } finally { setSyncing(false) }
+  }
+
   const load = () => {
     listRows('work_orders').then(setOrders).catch(() => setOrders([]))
     listRows('work_order_items').then(setItems).catch(() => setItems([]))
@@ -38,7 +91,25 @@ export default function WorkOrdersPage() {
     listRows('venues').then(setVenues).catch(() => setVenues([]))
     listRows('library_sub').then(setLibrarySub).catch(() => setLibrarySub([]))
   }
-  useEffect(() => { load(); loadSettings().then(setSettings) }, [])
+  useEffect(() => { load(); loadSettings().then(setSettings); syncFromQuotes() }, [])
+
+  // قفل تلقائي: أي أمر شغل مؤتمره خلص يتحوّل إلى "منتهي"
+  useEffect(() => {
+    if (!orders.length || !conferences.length) return
+    const today = new Date(); today.setHours(0, 0, 0, 0)
+    const ended = []
+    for (const o of orders) {
+      if (o.status === 'done' || o.status === 'cancelled') continue
+      const conf = conferences.find((c) => c.id === o.conference_id)
+      const endStr = conf?.date_to || conf?.date_from || o.date_to || o.date_from
+      if (!endStr) continue
+      const end = new Date(endStr); end.setHours(0, 0, 0, 0)
+      if (end < today) ended.push(o.id)
+    }
+    if (!ended.length) return
+    Promise.all(ended.map((id) => updateRow('work_orders', id, { status: 'done' }).catch(() => {})))
+      .then(() => setOrders((p) => p.map((o) => ended.includes(o.id) ? { ...o, status: 'done' } : o)))
+  }, [orders.length, conferences.length])
 
   const confName = (id) => conferences.find((c) => c.id === id)?.name || ''
   const empById = (id) => employees.find((e) => e.id === id)
@@ -149,7 +220,14 @@ export default function WorkOrdersPage() {
               <div className="entity-card" key={o.id}>
                 <div className="entity-head">
                   <b>{statusIcon[o.status] || '🟡'} #{o.wo_number} {o.title || confName(o.conference_id) || t('noTitle')}</b>
-                  <span className="badge">{its.length} {t('itemsWord')}</span>
+                  <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <label className="check-row" style={{ padding: 0, fontSize: 12.5 }} title={t('closeWorkOrder')}>
+                      <input type="checkbox" checked={o.status === 'done'}
+                        onChange={(e) => patch(o.id, { status: e.target.checked ? 'done' : 'open' })} />
+                      {o.status === 'done' ? t('wo_done') : t('closeWorkOrder')}
+                    </label>
+                    <span className="badge">{its.length} {t('itemsWord')}</span>
+                  </span>
                 </div>
                 <div className="entity-meta">
                   <span>🔑 <code>{o.order_key}</code></span>

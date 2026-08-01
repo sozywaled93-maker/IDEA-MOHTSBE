@@ -70,6 +70,11 @@ export default function QuotesPage() {
 
   // ===== إدارة القاعات =====
   const [hallPicker, setHallPicker] = useState(false)
+  const norm = (x) => String(x || '').trim().toLowerCase()
+  const venueHalls = useMemo(() => {
+    const v = venues.find((x) => norm(x.hotel_name) === norm(q.location))
+    return (v?.halls || []).filter((h) => h?.name)
+  }, [venues, q.location])
   const addHall = (nameArg) => {
     const name = typeof nameArg === 'string' ? nameArg : prompt(t('enterHallName'))
     if (!name?.trim()) return
@@ -287,7 +292,8 @@ export default function QuotesPage() {
   return (
     <div>
       <div className="toolbar">
-        <button className="mini-btn" onClick={() => setQ(null)}>← {t('quotes')}</button>
+        <button className="save-btn" style={{ fontSize: 15, fontWeight: 700, padding: '10px 18px' }}
+          onClick={() => setQ(null)}>← 📋 {t('allQuotes')}</button>
         <div style={{ flex: 1 }} />
         <div className="seg">
           <button className={q.doc_type !== 'invoice' ? 'active' : ''} onClick={() => setQ((p) => ({ ...p, doc_type: 'proposal' }))}>{t('proposal')}</button>
@@ -351,11 +357,19 @@ export default function QuotesPage() {
           <div className="field"><label>{t('dateTo')}</label>
             <input type="date" value={q.date_to} onChange={(e) => setQ((p) => ({ ...p, date_to: e.target.value }))} /></div>
           <div className="field"><label>{t('place')}</label>
-            <input list="venues-list" value={q.location} onChange={(e) => setQ((p) => ({ ...p, location: e.target.value }))}
-              placeholder={t('placeHint')} />
-            <datalist id="venues-list">
-              {venues.map((v) => <option key={v.id} value={v.hotel_name}>{v.governorate || ''}</option>)}
-            </datalist>
+            <select value={q.location} onChange={(e) => setQ((p) => ({ ...p, location: e.target.value }))}>
+              <option value="">—</option>
+              {venues.map((v) => <option key={v.id} value={v.hotel_name}>{v.hotel_name}{v.governorate ? ` — ${v.governorate}` : ''}</option>)}
+            </select>
+            {venueHalls.length > 0 && (
+              <select value="" style={{ marginTop: 6 }}
+                onChange={(e) => { if (e.target.value) addHall(e.target.value) }}>
+                <option value="">+ {t('addHallFromVenue')}</option>
+                {venueHalls.filter((h) => !q.halls.some((x) => x.name === h.name))
+                  .map((h, i) => <option key={i} value={h.name}>
+                    {h.name}{h.max_width ? ` (${h.max_width}×${h.max_height} م)` : ''}</option>)}
+              </select>
+            )}
             {(() => {
               const v = venues.find((x) => x.hotel_name === q.location)
               if (!v) return null
@@ -426,10 +440,9 @@ export default function QuotesPage() {
       {hallPicker && (
         <Modal title={`🏛 ${t('addHall')}`} onClose={() => setHallPicker(false)}>
           {(() => {
-            const v = venues.find((x) => x.hotel_name === q.location)
-            const halls = (v?.halls || []).filter((h) => h?.name)
-            const used = new Set(q.halls.map((h) => h.name))
-            const free = halls.filter((h) => !used.has(h.name))
+            const halls = venueHalls
+            const used = new Set(q.halls.map((h) => norm(h.name)))
+            const free = halls.filter((h) => !used.has(norm(h.name)))
             return (
               <>
                 {!q.location && <p className="hint-inline">{t('pickVenueFirst')}</p>}

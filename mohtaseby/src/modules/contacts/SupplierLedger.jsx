@@ -251,8 +251,28 @@ export default function SupplierLedger({ supplier, onClose }) {
             <span>{t('grandTotal')}: <b>{fmt(withVat(i, supplier))}</b> — {t('collected')}: {fmt(invPaid(i))} — <b style={{ color: withVat(i, supplier) - invPaid(i) > 0.01 ? '#A32D2D' : '#0F6E56' }}>{t('remainingAmt')}: {fmt(withVat(i, supplier) - invPaid(i))}</b></span>
           </div>
           <div className="entity-actions">
+            <label className="check-row" style={{ padding: 0, fontSize: 12.5 }}>
+              <input type="checkbox"
+                checked={withVat(i, supplier) - invPaid(i) <= 0.01}
+                onChange={async (e) => {
+                  const rest = withVat(i, supplier) - invPaid(i)
+                  if (e.target.checked) {
+                    if (rest <= 0.01) return
+                    const pays = [...(i.payments || []), {
+                      amount: rest, method: 'cash', settled: true,
+                      pay_date: new Date().toISOString().slice(0, 10), note: t('markedPaid'),
+                    }]
+                    await updateRow('supplier_invoices', i.id, { payments: pays })
+                  } else {
+                    if (!confirm(t('undoPaidConfirm'))) return
+                    await updateRow('supplier_invoices', i.id, { payments: (i.payments || []).filter((x) => !x.settled) })
+                  }
+                  load()
+                }} />
+              {withVat(i, supplier) - invPaid(i) <= 0.01 ? t('fullyPaid') : t('markPaid')}
+            </label>
             <button onClick={() => setInv({ ...i, items: i.items || [], payments: i.payments || [] })}>{t('edit')}</button>
-            <button className="danger" onClick={async () => { await deleteRow('supplier_invoices', i.id); load() }}>{t('delete')}</button>
+            <button className="danger" onClick={async () => { if (confirm(t('confirmDelete'))) { await deleteRow('supplier_invoices', i.id); load() } }}>{t('delete')}</button>
           </div>
         </div>
       ))}
