@@ -243,7 +243,7 @@ export default function TreasuryPage() {
                 <tbody>
                   {visExpenses.map((r) => (
                     <tr key={r.id}>
-                      <td><DebInput value={r.name || ''} placeholder="بنزين / فطار / فندق / صيانة / دفعة مورد..." onCommit={(v) => patchE(r.id, 'name', v)} /></td>
+                      <td><DebInput value={r.name || ''} placeholder={t('phExpenseName')} onCommit={(v) => patchE(r.id, 'name', v)} /></td>
                       <td>
                         <select value={r.expense_type} onChange={(e) => patchE(r.id, 'expense_type', e.target.value)}>
                           <option value="event">{t('eventExpense')}</option>
