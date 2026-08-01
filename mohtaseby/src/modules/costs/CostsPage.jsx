@@ -73,7 +73,7 @@ export default function CostsPage() {
             <thead><tr>
               <th>DATE</th><th>CONFERENCE</th><th>{t('itemName')}</th><th>{t('suppliers')}</th>
               <th>{t('quantity')}</th><th>PRICE</th><th>OF DAY</th><th>OF HALL</th>
-              <th>دفعة 1</th><th>دفعة 2</th><th>دفعة 3</th>
+              <th>{t('payment1')}</th><th>{t('payment2')}</th><th>{t('payment3')}</th>
               <th>TOTAL</th><th>Remaining</th><th>TOTAL+VAT</th><th>Location</th><th></th>
             </tr></thead>
             <tbody>
