@@ -83,7 +83,7 @@ export default function VenuesTab() {
             <div className="field"><label>{t('hotelName')} *</label>
               <input value={form.hotel_name} onChange={(e) => set('hotel_name', e.target.value)} /></div>
             <div className="field"><label>{t('governorate')}</label>
-              <input value={form.governorate} onChange={(e) => set('governorate', e.target.value)} placeholder="القاهرة / الجيزة / الإسكندرية..." /></div>
+              <input value={form.governorate} onChange={(e) => set('governorate', e.target.value)} placeholder={t('phGovernorate')} /></div>
             <div className="field"><label>{t('address')}</label>
               <input value={form.address} onChange={(e) => set('address', e.target.value)} /></div>
             <div className="field"><label>{t('locationLink')}</label>
