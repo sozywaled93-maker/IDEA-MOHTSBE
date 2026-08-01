@@ -117,7 +117,7 @@ export default function LibraryPage() {
                 <tbody>
                   {selSubs.map((r) => (
                     <tr key={r.id}>
-                      <td><BlurInput value={r.name} placeholder="شاشة تاتش / P2 / P3..."
+                      <td><BlurInput value={r.name} placeholder={t('phItemName')}
                         onCommit={(v) => patchSub(r.id, 'name', v)} /></td>
                       <td>
                         <select value={r.unit || ''} onChange={(e) => patchSub(r.id, 'unit', e.target.value)}>
