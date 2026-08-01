@@ -57,12 +57,27 @@ export default function CompanySettingsPage() {
   const [quotes, setQuotes] = useState([])
   const [tgChats, setTgChats] = useState(null)
   const [empOpen, setEmpOpen] = useState(null)
+  const [suppliers, setSuppliers] = useState([])
+  const [empSuppliers, setEmpSuppliers] = useState([])
 
   useEffect(() => {
     loadSettings().then((d) => d && setS((p) => ({ ...p, ...d })))
     listRows('employees').then(setEmployees)
     listRows('quotes').then(setQuotes)
+    listRows('suppliers').then(setSuppliers).catch(() => setSuppliers([]))
+    listRows('employee_suppliers', 'id').then(setEmpSuppliers).catch(() => setEmpSuppliers([]))
   }, [])
+
+  const reloadEmpSuppliers = () =>
+    listRows('employee_suppliers', 'id').then(setEmpSuppliers).catch(() => setEmpSuppliers([]))
+  const toggleEmpSupplier = async (empId, supId, on) => {
+    if (on) await insertRow('employee_suppliers', { employee_id: empId, supplier_id: supId })
+    else {
+      const link = empSuppliers.find((x) => x.employee_id === empId && x.supplier_id === supId)
+      if (link) await deleteRow('employee_suppliers', link.id)
+    }
+    reloadEmpSuppliers()
+  }
 
   const reloadEmp = () => listRows('employees').then(setEmployees)
   const patchEmp = (id, patch) => {
@@ -273,9 +288,43 @@ export default function CompanySettingsPage() {
                       onChange={(e) => patchEmp(emp.id, { can_log_expense: e.target.checked })} />
                     💰 {t('canLogExpense')}
                   </label>
+                  <label className="check-row" style={{ padding: 0 }}>
+                    <input type="checkbox" checked={!!emp.can_view_supplier_ledger}
+                      onChange={(e) => patchEmp(emp.id, { can_view_supplier_ledger: e.target.checked })} />
+                    📊 {t('canViewSupplierLedger')}
+                  </label>
+                  <label className="check-row" style={{ padding: 0 }}>
+                    <input type="checkbox" checked={!!emp.can_view_supplier_prices}
+                      onChange={(e) => patchEmp(emp.id, { can_view_supplier_prices: e.target.checked })} />
+                    📋 {t('canViewSupplierPrices')}
+                  </label>
+                  <label className="check-row" style={{ padding: 0 }}>
+                    <input type="checkbox" checked={(emp.supplier_scope || 'all') === 'all'}
+                      onChange={(e) => patchEmp(emp.id, { supplier_scope: e.target.checked ? 'all' : 'selected' })} />
+                    🌐 {t('seesAllSuppliers')}
+                  </label>
                 </div>
                 <p className="hint-inline">{t('tgPermissionsHint')}</p>
               </div>
+
+              {emp.supplier_scope === 'selected'
+                && (emp.can_view_supplier_ledger || emp.can_view_supplier_prices) && (
+                <div className="field" style={{ marginTop: 10 }}>
+                  <label>{t('allowedSuppliers')}</label>
+                  {suppliers.length ? (
+                    <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+                      {suppliers.map((sup) => (
+                        <label key={sup.id} className="check-row" style={{ padding: 0 }}>
+                          <input type="checkbox"
+                            checked={empSuppliers.some((x) => x.employee_id === emp.id && x.supplier_id === sup.id)}
+                            onChange={(e) => toggleEmpSupplier(emp.id, sup.id, e.target.checked)} />
+                          {sup.supplier_name || sup.company_name}
+                        </label>
+                      ))}
+                    </div>
+                  ) : <p className="hint-inline">{t('noSuppliersYet')}</p>}
+                </div>
+              )}
 
               <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 14 }}>
                 <button className="mini-btn" style={{ color: '#A32D2D' }}
