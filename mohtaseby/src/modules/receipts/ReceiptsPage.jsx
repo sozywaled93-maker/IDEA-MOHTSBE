@@ -135,31 +135,31 @@ export default function ReceiptsPage() {
                 const c = clients.find((x) => x.id === e.target.value)
                 setForm((p) => ({ ...p, client_id: e.target.value, payer_name: c ? c.company_name : 'شركة اياديا لتنظيم المؤتمرات' }))
               }}>
-                <option value="">شركة اياديا لتنظيم المؤتمرات (افتراضي)</option>
+                <option value="">{t('defaultCompany')}</option>
                 {clients.map((c) => <option key={c.id} value={c.id}>{c.company_name}</option>)}
               </select></div>
-            <div className="field"><label>جنيه</label>
+            <div className="field"><label>{t('pounds')}</label>
               <input type="number" dir="ltr" min="0" value={form.amount_egp} onChange={(e) => set('amount_egp', e.target.value)} /></div>
-            <div className="field"><label>قرش</label>
+            <div className="field"><label>{t('piastres')}</label>
               <input type="number" dir="ltr" min="0" max="99" value={form.amount_piasters} onChange={(e) => set('amount_piasters', e.target.value)} /></div>
             <div className="field" style={{ gridColumn: '1 / -1' }}>
               <label>{t('amountWords')}</label>
               <div className="words-preview">{amountInWords(+form.amount_egp || 0, +form.amount_piasters || 0)}</div>
             </div>
-            <div className="field"><label>نقداً / شيك</label>
+            <div className="field"><label>{t('cashWord')} / {t('chequeWord')}</label>
               <div className="seg">
-                <button className={form.payment_type === 'نقداً' ? 'active' : ''} onClick={() => set('payment_type', 'نقداً')}>نقداً</button>
-                <button className={form.payment_type === 'شيك' ? 'active' : ''} onClick={() => set('payment_type', 'شيك')}>شيك</button>
+                <button className={form.payment_type === 'نقداً' ? 'active' : ''} onClick={() => set('payment_type', 'نقداً')}>{t('cashWord')}</button>
+                <button className={form.payment_type === 'شيك' ? 'active' : ''} onClick={() => set('payment_type', 'شيك')}>{t('chequeWord')}</button>
               </div>
             </div>
             {form.payment_type === 'شيك' && (
-              <div className="field"><label>رقم الشيك</label>
+              <div className="field"><label>{t('chequeNumber')}</label>
                 <input dir="ltr" value={form.cheque_number} onChange={(e) => set('cheque_number', e.target.value)} /></div>
             )}
             <div className="field"><label>{t('receiptDate')}</label>
               <input type="date" value={form.receipt_date} onChange={(e) => set('receipt_date', e.target.value)} /></div>
-            <div className="field" style={{ gridColumn: '1 / -1' }}><label>وذلك نظير</label>
-              <input value={form.purpose} onChange={(e) => set('purpose', e.target.value)} placeholder="أعمال..." /></div>
+            <div className="field" style={{ gridColumn: '1 / -1' }}><label>{t('forPurpose')}</label>
+              <input value={form.purpose} onChange={(e) => set('purpose', e.target.value)} placeholder={t('phPurpose')} /></div>
             <div className="field" style={{ gridColumn: '1 / -1' }}>
               <label>{t('nationalId')}</label>
               <div className="upload-box" style={{ minHeight: 90 }}
