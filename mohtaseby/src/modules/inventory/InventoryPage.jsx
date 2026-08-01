@@ -10,10 +10,10 @@ import ChatIdField from '../../components/ChatIdField.jsx'
 const genBarcode = () => 'IDEA' + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 5).toUpperCase()
 
 const STATUS = {
-  available: { ar: 'متاح', color: '#0F6E56', bg: '#E1F5EE' },
-  out: { ar: 'خارج في مؤتمر', color: '#B05E0B', bg: '#FAEEDA' },
-  maintenance: { ar: 'صيانة', color: '#1D6FB8', bg: '#E3ECFA' },
-  damaged: { ar: 'تالف', color: '#A32D2D', bg: '#FDECEC' },
+  available: { key: 'stAvailable', color: '#0F6E56', bg: '#E1F5EE' },
+  out: { key: 'stOut', color: '#B05E0B', bg: '#FAEEDA' },
+  maintenance: { key: 'stMaintenance', color: '#1D6FB8', bg: '#E3ECFA' },
+  damaged: { key: 'stDamaged', color: '#A32D2D', bg: '#FDECEC' },
 }
 
 export default function InventoryPage() {
@@ -58,7 +58,7 @@ export default function InventoryPage() {
     if (!name?.trim()) return
     const r = await insertRow('inventory_items', {
       name: name.trim(), item_type: type,
-      unit_label: type === 'length' ? 'متر' : 'قطعة', length_balance: 0, notes: '',
+      unit_label: type === 'length' ? t('metre') : t('piece'), length_balance: 0, notes: '',
     })
     setSel(r.id); load()
   }
@@ -71,7 +71,7 @@ export default function InventoryPage() {
     let itemId = purchase.item_id
     if (!itemId) {
       if (!purchase.new_name?.trim()) return alert(t('required') + ': ' + t('invItemName'))
-      const r = await insertRow('inventory_items', { name: purchase.new_name.trim(), item_type: 'unit', unit_label: 'قطعة', length_balance: 0, notes: '' })
+      const r = await insertRow('inventory_items', { name: purchase.new_name.trim(), item_type: 'unit', unit_label: t('piece'), length_balance: 0, notes: '' })
       itemId = r.id
     }
     const n = Math.max(1, Math.min(500, +purchase.count || 1))
@@ -206,7 +206,7 @@ export default function InventoryPage() {
             <span className="hint-inline">
               {Object.entries(STATUS).map(([k, v]) => {
                 const n = itemUnits.filter((u) => u.status === k).length
-                return n ? `${v.ar}: ${n}  ` : ''
+                return n ? `${t(v.key)}: ${n}  ` : ''
               })}
             </span>
           </div>
@@ -240,7 +240,7 @@ export default function InventoryPage() {
                             const extra = v === 'damaged' ? { damage_reason: prompt(t('damageReason')) || '' } : {}
                             patchUnit(u.id, { status: v, ...extra, ...(v !== 'out' ? { conference_id: null } : {}) })
                           }}>
-                          {Object.entries(STATUS).map(([k, v]) => <option key={k} value={k}>{v.ar}</option>)}
+                          {Object.entries(STATUS).map(([k, v]) => <option key={k} value={k}>{t(v.key)}</option>)}
                         </select>
                       </td>
                       <td>
@@ -353,7 +353,7 @@ export default function InventoryPage() {
               </div></div>
             <div className="field"><label>{t('sourceLbl')}</label>
               <input value={purchase.source} onChange={(e) => setPurchase((p) => ({ ...p, source: e.target.value }))}
-                placeholder="مورد / محل / مشتريات..." /></div>
+                placeholder={t('phSource')} /></div>
             <div className="field"><label>{t('receiptDate')}</label>
               <input type="date" value={purchase.date} onChange={(e) => setPurchase((p) => ({ ...p, date: e.target.value }))} /></div>
             <div className="field"><label>{t('notes')}</label>
@@ -383,7 +383,7 @@ export default function InventoryPage() {
             <div className="entity-meta" style={{ fontSize: 14 }}>
               <span dir="ltr" style={{ fontFamily: 'monospace' }}>{u.barcode}</span>
               {u.serial && <span>{t('serial')}: <span dir="ltr">{u.serial}</span></span>}
-              <span>{t('status')}: <b style={{ color: STATUS[u.status]?.color }}>{STATUS[u.status]?.ar}</b>
+              <span>{t('status')}: <b style={{ color: STATUS[u.status]?.color }}>{t(STATUS[u.status]?.key)}</b>
                 {u.status === 'out' && ` — ${confName(u.conference_id)}`}</span>
             </div>
             <div className="field" style={{ marginTop: 12 }}>
@@ -408,7 +408,7 @@ export default function InventoryPage() {
                 <button className="mini-btn" onClick={async () => {
                   await patchUnit(u.id, { status: 'maintenance', conference_id: null })
                   setScanned({ ...u, status: 'maintenance' })
-                }}>🔧 {STATUS.maintenance.ar}</button>
+                }}>🔧 {t(STATUS.maintenance.key)}</button>
               </div>
             </div>
           </Modal>
@@ -1034,7 +1034,7 @@ function InvSummary({ t, units, items }) {
                   <td><b>{u.qty ?? 1}</b></td>
                   <td>{u.length_m ? `${u.length_m} م` : '—'}</td>
                   <td>{u.condition === 'used' ? t('condUsed') : t('condNew')}</td>
-                  <td>{STATUS[u.status]?.ar || u.status}</td>
+                  <td>{STATUS[u.status] ? t(STATUS[u.status].key) : u.status}</td>
                 </tr>
               ))}
             </tbody>
