@@ -3,6 +3,8 @@ import { useLang } from '../../lib/i18n.jsx'
 import { listRows, insertRow, updateRow, uploadDoc, openFile, downloadFile } from '../../lib/db.js'
 import { fmt } from '../../lib/tafqeet.js'
 import { Modal, EmptyState } from '../../components/ui.jsx'
+import { printHtml } from '../exports/exportQuote.js'
+import { loadSettings } from '../../lib/supabase.js'
 import SupplierLedger from './SupplierLedger.jsx'
 import FreeLedger from './FreeLedger.jsx'
 
@@ -53,6 +55,48 @@ export default function AccountsPage() {
   const [detail, setDetail] = useState(null)    // {kind, row}
   const [payForm, setPayForm] = useState(null)
   const [clientPay, setClientPay] = useState(null)
+  const [settings, setSettings] = useState(null)
+
+  // كشف حساب دوري PDF للعميل
+  const printClientStatement = (r) => {
+    const rowsHtml = r.bills.map((q) => {
+      const pays = parsePays(q)
+      const paid = pays.reduce((a, x) => a + (+x.amount || 0), 0)
+      const rest = (+q.grand_total || 0) - paid
+      const payLines = pays.map((p) =>
+        `<div style="font-size:11px;color:#666">— ${p.date || ''} : ${fmt(p.amount)} (${t(p.method || 'cash')})</div>`
+      ).join('')
+      return `<tr>
+        <td>${q.date_from || '—'}</td>
+        <td style="text-align:start">${q.conference_name || '—'}${payLines}</td>
+        <td>${fmt(q.grand_total)}</td>
+        <td>${fmt(paid)}</td>
+        <td style="font-weight:700;color:${rest > 0.01 ? '#A32D2D' : '#0F6E56'}">${fmt(rest)}</td>
+      </tr>`
+    }).join('')
+
+    const body = `
+      <h2 style="margin:0 0 4px">${t('clientStatement')}</h2>
+      <div style="margin-bottom:10px">
+        <b>${r.name}</b>${r.phone ? ` — ${r.phone}` : ''}<br>
+        <small>${t('date')}: ${new Date().toISOString().slice(0, 10)}</small>
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:12.5px" border="1" cellpadding="6">
+        <thead style="background:#f5f5f5">
+          <tr><th>${t('date')}</th><th>${t('conferences')}</th>
+          <th>${t('grandTotal')}</th><th>${t('collected')}</th><th>${t('remainingAmt')}</th></tr>
+        </thead>
+        <tbody>${rowsHtml}</tbody>
+        <tfoot style="background:#f5f5f5;font-weight:700">
+          <tr><td colspan="2">${t('total')}</td>
+          <td>${fmt(r.due)}</td><td>${fmt(r.paid)}</td>
+          <td style="color:${r.balance > 0.01 ? '#A32D2D' : '#0F6E56'}">${fmt(r.balance)}</td></tr>
+        </tfoot>
+      </table>`
+
+    printHtml({ title: `${t('clientStatement')} — ${r.name}`, bodyHtml: body,
+      settings, letterhead: !!settings?.letterhead_url, stamp: false, sign: false, preview: false })
+  }
 
   const setCP = (patch) => setClientPay((p) => p && ({ ...p, data: { ...p.data, ...patch } }))
 
@@ -71,6 +115,30 @@ export default function AccountsPage() {
       : [...pays, clientPay.data]
     await saveQuotePayments(clientPay.quote, next)
     setClientPay(null)
+  }
+
+  // تذكير تحصيل للعميل المتأخر
+  const sendCollectionReminder = (r) => {
+    const c = r.client || {}
+    const num = String(c.whatsapp_number || c.phone || '').replace(/[^\d]/g, '')
+    if (!num) return alert(t('noWhatsappNumber'))
+    const intl = num.startsWith('0') ? '20' + num.slice(1) : num.startsWith('20') ? num : '20' + num
+    const open = r.bills.filter((q) => {
+      const p = parsePays(q).reduce((a, x) => a + (+x.amount || 0), 0)
+      return (+q.grand_total || 0) - p > 0.01
+    })
+    const lines = [
+      `${t('collectionReminder')} — ${c.company_name || r.name}`,
+      '',
+      ...open.map((q) => {
+        const p = parsePays(q).reduce((a, x) => a + (+x.amount || 0), 0)
+        return `• ${q.conference_name || '—'} (${q.date_from || '—'}): ${fmt((+q.grand_total || 0) - p)}`
+      }),
+      '',
+      `${t('remainingAmt')}: ${fmt(r.balance)}`,
+      r.age != null ? `${t('agingDays')}: ${r.age} ${t('dayWord')}` : '',
+    ].filter(Boolean)
+    window.open(`https://wa.me/${intl}?text=${encodeURIComponent(lines.join('\n'))}`, '_blank')
   }
 
   const sendClientReceipt = (client, q, pay) => {
@@ -101,6 +169,7 @@ export default function AccountsPage() {
     listRows('supplier_adjustments').then(setAdjustments).catch(() => setAdjustments([]))
   }
   useEffect(load, [])
+  useEffect(() => { loadSettings().then(setSettings) }, [])
 
   /* ---------- اللي علينا: كل مورد ورصيده ---------- */
   const payables = useMemo(() => suppliers.map((sup) => {
@@ -139,6 +208,32 @@ export default function AccountsPage() {
     if (filter === 'overdue') return r.balance > 0.01 && (r.age ?? 0) > 30
     return r.due > 0.01 || r.paid > 0.01
   }).sort((a, b) => b.balance - a.balance)
+
+  // شرائح أعمار الديون (Aging Buckets) — معيار محاسبي عالمي
+  const BUCKETS = [
+    { key: 'current', max: 0 }, { key: 'b30', max: 30 },
+    { key: 'b60', max: 60 }, { key: 'b90', max: 90 }, { key: 'b90p', max: Infinity },
+  ]
+  const bucketOf = (age) => {
+    if (age == null || age <= 0) return 'current'
+    if (age <= 30) return 'b30'
+    if (age <= 60) return 'b60'
+    if (age <= 90) return 'b90'
+    return 'b90p'
+  }
+  const aging = useMemo(() => {
+    const z = { current: 0, b30: 0, b60: 0, b90: 0, b90p: 0 }
+    for (const r of rows) if (r.balance > 0.01) z[bucketOf(r.age)] += r.balance
+    return z
+  }, [rows])
+
+  // توقّع التدفق النقدي للثلاثين يوم الجاية
+  const forecast = useMemo(() => {
+    const inflow = receivables.reduce((s, r) => s + Math.max(r.balance, 0), 0)
+    const outflow = payables.reduce((s, r) => s + Math.max(r.balance, 0), 0)
+    const atRisk = receivables.reduce((s, r) => s + (r.balance > 0.01 && (r.age ?? 0) > 90 ? r.balance : 0), 0)
+    return { inflow, outflow, net: inflow - outflow, atRisk, likely: inflow - atRisk - outflow }
+  }, [receivables, payables])
 
   const totalOpen = rows.reduce((s, r) => s + (r.balance > 0.01 ? r.balance : 0), 0)
   const totalOverdue = rows.reduce((s, r) => s + (r.balance > 0.01 && (r.age ?? 0) > 30 ? r.balance : 0), 0)
@@ -203,6 +298,52 @@ export default function AccountsPage() {
         </span>
       </div>
 
+      {/* جدولة أعمار الديون */}
+      {totalOpen > 0.01 && (
+        <div className="card" style={{ padding: 12, marginBottom: 12 }}>
+          <h3 style={{ fontSize: 14, marginBottom: 8 }}>📅 {t('agingReport')}</h3>
+          <div style={{ overflowX: 'auto' }}>
+            <table className="quote-table" style={{ width: '100%' }}>
+              <thead><tr>
+                <th>{t('bucketCurrent')}</th><th>1–30</th><th>31–60</th>
+                <th>61–90</th><th>+90</th><th>{t('total')}</th>
+              </tr></thead>
+              <tbody><tr>
+                <td>{fmt(aging.current)}</td>
+                <td style={{ color: aging.b30 > 0 ? '#B05E0B' : 'inherit' }}>{fmt(aging.b30)}</td>
+                <td style={{ color: aging.b60 > 0 ? '#B05E0B' : 'inherit' }}>{fmt(aging.b60)}</td>
+                <td style={{ color: aging.b90 > 0 ? '#A32D2D' : 'inherit' }}>{fmt(aging.b90)}</td>
+                <td style={{ color: aging.b90p > 0 ? '#A32D2D' : 'inherit', fontWeight: 700 }}>{fmt(aging.b90p)}</td>
+                <td><b>{fmt(totalOpen)}</b></td>
+              </tr></tbody>
+            </table>
+          </div>
+          {aging.b90p > 0.01 && (
+            <p className="hint-inline" style={{ color: '#A32D2D' }}>
+              ⚠ {t('agingWarn').replace('{amt}', fmt(aging.b90p))}
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* توقّع التدفق النقدي */}
+      {tab !== 'free' && (forecast.inflow > 0.01 || forecast.outflow > 0.01) && (
+        <div className="card" style={{ padding: 12, marginBottom: 12 }}>
+          <h3 style={{ fontSize: 14, marginBottom: 8 }}>💧 {t('cashForecast')}</h3>
+          <div className="entity-meta">
+            <span>📥 {t('expectedIn')}: <b style={{ color: '#0F6E56' }}>{fmt(forecast.inflow)}</b></span>
+            <span>📤 {t('expectedOut')}: <b style={{ color: '#A32D2D' }}>{fmt(forecast.outflow)}</b></span>
+            <span>📊 {t('netFlow')}: <b style={{ color: forecast.net >= 0 ? '#0F6E56' : '#A32D2D' }}>{fmt(forecast.net)}</b></span>
+            {forecast.atRisk > 0.01 && (
+              <span>⚠ {t('atRisk')}: <b style={{ color: '#A32D2D' }}>{fmt(forecast.atRisk)}</b></span>
+            )}
+          </div>
+          {forecast.atRisk > 0.01 && (
+            <p className="hint-inline">{t('likelyNet')}: <b>{fmt(forecast.likely)}</b> — {t('likelyHint')}</p>
+          )}
+        </div>
+      )}
+
       {shown.length === 0 ? <EmptyState /> : (
         <div style={{ overflowX: 'auto' }}><table className="quote-table">
           <thead><tr>
@@ -217,12 +358,27 @@ export default function AccountsPage() {
               return (
                 <tr key={r.id} style={late ? { background: '#FDECEC' } : {}}>
                   <td><b>{closed ? '🟢' : late ? '🔴' : '🟡'} {r.name}</b>
-                    {r.phone && <div className="hint-inline">☎ {r.phone}</div>}</td>
+                    {r.phone && <div className="hint-inline">☎ {r.phone}</div>}
+                    {tab === 'receivable' && +r.client?.credit_limit > 0 && (
+                      <div className="hint-inline"
+                        style={{ color: r.balance > +r.client.credit_limit ? '#A32D2D' : 'inherit', fontWeight: r.balance > +r.client.credit_limit ? 700 : 400 }}>
+                        {r.balance > +r.client.credit_limit ? '⛔ ' : '💳 '}
+                        {t('creditLimit')}: {fmt(r.client.credit_limit)}
+                        {r.balance > +r.client.credit_limit && ` — ${t('limitExceeded')}`}
+                      </div>
+                    )}</td>
                   <td>{fmt(r.due)}</td>
                   <td>{fmt(r.paid)}</td>
                   <td><b style={{ color: closed ? '#0F6E56' : '#A32D2D' }}>
                     {closed ? t('settled') : fmt(r.balance)}</b></td>
-                  <td>{r.age != null ? `${r.age} ${t('dayWord')}` : '—'}</td>
+                  <td>
+                    {r.age != null ? `${r.age} ${t('dayWord')}` : '—'}
+                    {!closed && r.age != null && r.age > 0 && (
+                      <div className="hint-inline" style={{ fontSize: 11 }}>
+                        {t('bucket_' + bucketOf(r.age))}
+                      </div>
+                    )}
+                  </td>
                   <td>
                     <button className="mini-btn" onClick={() => setDetail({ kind: tab, row: r })}>{t('details')}</button>
                     {tab === 'payable' && (
@@ -234,6 +390,14 @@ export default function AccountsPage() {
                       <button className="mini-btn ok" style={{ marginInlineStart: 4 }}
                         onClick={() => setDetail({ kind: 'payable', row: r, openPay: true })}>
                         💵 {t('pay')}</button>
+                    )}
+                    {tab === 'receivable' && (
+                      <button className="mini-btn" style={{ marginInlineStart: 4 }}
+                        onClick={() => printClientStatement(r)}>🖨 {t('statement')}</button>
+                    )}
+                    {tab === 'receivable' && late && (
+                      <button className="mini-btn" style={{ marginInlineStart: 4 }}
+                        onClick={() => sendCollectionReminder(r)}>🔔 {t('remind')}</button>
                     )}
                     {tab === 'receivable' && r.bills.length > 0 && (
                       <button className="mini-btn ok" style={{ marginInlineStart: 4 }}

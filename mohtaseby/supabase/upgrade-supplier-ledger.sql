@@ -48,3 +48,6 @@ alter table supplier_payments
   add column if not exists cheque_no   text default '',
   add column if not exists handed_by   text default '',
   add column if not exists receipt_url text default '';
+
+-- ---- 6) حد الائتمان للعميل ----
+alter table clients add column if not exists credit_limit numeric default 0;

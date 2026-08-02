@@ -122,6 +122,10 @@ export default function ClientsTab() {
               <input dir="ltr" value={form.commercial_reg_no} onChange={(e) => set('commercial_reg_no', e.target.value)} /></div>
             <div className="field"><label>{t('taxCardNo')}</label>
               <input dir="ltr" value={form.tax_card_no} onChange={(e) => set('tax_card_no', e.target.value)} /></div>
+            <div className="field"><label>{t('creditLimit')}</label>
+              <input type="number" dir="ltr" min="0" value={form.credit_limit || ''}
+                onChange={(e) => set('credit_limit', e.target.value)} />
+              <span className="hint-inline">{t('creditLimitHint')}</span></div>
             <DocUpload label={t('crImage')} value={form.cr_image_url} onChange={(v) => set('cr_image_url', v)} t={t} />
             <DocUpload label={t('taxCardImage')} value={form.tax_card_image_url} onChange={(v) => set('tax_card_image_url', v)} t={t} />
           </div>
