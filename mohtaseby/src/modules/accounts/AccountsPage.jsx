@@ -52,6 +52,10 @@ export default function AccountsPage() {
   const [invoices, setInvoices] = useState([])
   const [payments, setPayments] = useState([])
   const [adjustments, setAdjustments] = useState([])
+  const [expenses, setExpenses] = useState([])
+  const [incomes, setIncomes] = useState([])
+  const [conferences, setConferences] = useState([])
+  const [flowScope, setFlowScope] = useState('all')   // all | آخر مشروع
   const [detail, setDetail] = useState(null)    // {kind, row}
   const [payForm, setPayForm] = useState(null)
   const [clientPay, setClientPay] = useState(null)
@@ -167,6 +171,9 @@ export default function AccountsPage() {
     listRows('supplier_invoices').then(setInvoices).catch(() => setInvoices([]))
     listRows('supplier_payments').then(setPayments).catch(() => setPayments([]))
     listRows('supplier_adjustments').then(setAdjustments).catch(() => setAdjustments([]))
+    listRows('expenses').then(setExpenses).catch(() => setExpenses([]))
+    listRows('incomes').then(setIncomes).catch(() => setIncomes([]))
+    listRows('conferences').then(setConferences).catch(() => setConferences([]))
   }
   useEffect(load, [])
   useEffect(() => { loadSettings().then(setSettings) }, [])
@@ -227,13 +234,60 @@ export default function AccountsPage() {
     return z
   }, [rows])
 
-  // توقّع التدفق النقدي للثلاثين يوم الجاية
-  const forecast = useMemo(() => {
-    const inflow = receivables.reduce((s, r) => s + Math.max(r.balance, 0), 0)
-    const outflow = payables.reduce((s, r) => s + Math.max(r.balance, 0), 0)
-    const atRisk = receivables.reduce((s, r) => s + (r.balance > 0.01 && (r.age ?? 0) > 90 ? r.balance : 0), 0)
-    return { inflow, outflow, net: inflow - outflow, atRisk, likely: inflow - atRisk - outflow }
-  }, [receivables, payables])
+  // ===== التدفق النقدي الكامل =====
+  // اللي حصل فعلاً (كاش خرج/دخل) + اللي لسه متوقّع
+  const cashFlow = useMemo(() => {
+    const scoped = (qid) => flowScope === 'all' || qid === flowScope
+
+    // ① محصّل فعلاً من العملاء (دفعات مسجلة على الفواتير)
+    const collected = quotes.reduce((s, q) => {
+      if (q.doc_type !== 'invoice' || !scoped(q.id)) return s
+      return s + parsePays(q).reduce((a, x) => a + (+x.amount || 0), 0)
+    }, 0)
+
+    // ② إيرادات إضافية مسجلة في الخزنة
+    const otherIn = incomes.reduce((s, i) => s + (scoped(i.quote_id) ? (+i.amount || 0) : 0), 0)
+
+    // ③ مدفوع فعلاً للموردين (دفعات الفواتير + الدفعات المستقلة)
+    const paidSuppliers = suppliers.reduce((s, sup) => {
+      const fromInv = invoices.filter((x) => x.supplier_id === sup.id && scoped(x.quote_id))
+        .reduce((a, i) => a + invPaid(i), 0)
+      const direct = flowScope === 'all'
+        ? payments.filter((x) => x.supplier_id === sup.id).reduce((a, p) => a + (+p.amount || 0), 0)
+        : 0
+      return s + fromInv + direct
+    }, 0)
+
+    // ④ مصاريف الخزنة (بنزين، فطار، فندق... إلخ)
+    const spent = expenses.reduce((s, e) => s + (scoped(e.quote_id) ? (+e.amount || 0) : 0), 0)
+
+    // ⑤ اللي لسه لينا / علينا
+    const stillIn = quotes.reduce((s, q) => {
+      if (q.doc_type !== 'invoice' || !scoped(q.id)) return s
+      const p = parsePays(q).reduce((a, x) => a + (+x.amount || 0), 0)
+      return s + Math.max((+q.grand_total || 0) - p, 0)
+    }, 0)
+    const stillOut = flowScope === 'all'
+      ? payables.reduce((s, r) => s + Math.max(r.balance, 0), 0)
+      : suppliers.reduce((s, sup) => {
+          const inv = invoices.filter((x) => x.supplier_id === sup.id && x.quote_id === flowScope)
+          return s + inv.reduce((a, i) => a + Math.max(withVat(i, sup) - invPaid(i), 0), 0)
+        }, 0)
+
+    const atRisk = flowScope === 'all'
+      ? receivables.reduce((s, r) => s + (r.balance > 0.01 && (r.age ?? 0) > 90 ? r.balance : 0), 0)
+      : 0
+
+    const actualIn = collected + otherIn
+    const actualOut = paidSuppliers + spent
+    return {
+      collected, otherIn, paidSuppliers, spent, stillIn, stillOut, atRisk,
+      actualIn, actualOut,
+      actualNet: actualIn - actualOut,                       // الكاش اللي اتحرك فعلاً
+      projectedNet: (actualIn + stillIn) - (actualOut + stillOut),  // لو كله اتحصّل واتدفع
+      likelyNet: (actualIn + stillIn - atRisk) - (actualOut + stillOut),
+    }
+  }, [quotes, incomes, expenses, suppliers, invoices, payments, payables, receivables, flowScope])
 
   const totalOpen = rows.reduce((s, r) => s + (r.balance > 0.01 ? r.balance : 0), 0)
   const totalOverdue = rows.reduce((s, r) => s + (r.balance > 0.01 && (r.age ?? 0) > 30 ? r.balance : 0), 0)
@@ -326,21 +380,67 @@ export default function AccountsPage() {
         </div>
       )}
 
-      {/* توقّع التدفق النقدي */}
-      {tab !== 'free' && (forecast.inflow > 0.01 || forecast.outflow > 0.01) && (
+      {/* التدفق النقدي */}
+      {tab !== 'free' && (
         <div className="card" style={{ padding: 12, marginBottom: 12 }}>
-          <h3 style={{ fontSize: 14, marginBottom: 8 }}>💧 {t('cashForecast')}</h3>
-          <div className="entity-meta">
-            <span>📥 {t('expectedIn')}: <b style={{ color: '#0F6E56' }}>{fmt(forecast.inflow)}</b></span>
-            <span>📤 {t('expectedOut')}: <b style={{ color: '#A32D2D' }}>{fmt(forecast.outflow)}</b></span>
-            <span>📊 {t('netFlow')}: <b style={{ color: forecast.net >= 0 ? '#0F6E56' : '#A32D2D' }}>{fmt(forecast.net)}</b></span>
-            {forecast.atRisk > 0.01 && (
-              <span>⚠ {t('atRisk')}: <b style={{ color: '#A32D2D' }}>{fmt(forecast.atRisk)}</b></span>
+          <div className="toolbar" style={{ marginBottom: 8 }}>
+            <h3 style={{ fontSize: 14, margin: 0, flex: 1 }}>💧 {t('cashFlow')}</h3>
+            <select value={flowScope} onChange={(e) => setFlowScope(e.target.value)}>
+              <option value="all">🌐 {t('allProjects')}</option>
+              {quotes.filter((q) => q.doc_type === 'invoice')
+                .sort((a, b) => String(b.date_from || '').localeCompare(String(a.date_from || '')))
+                .slice(0, 40)
+                .map((q) => <option key={q.id} value={q.id}>
+                  {q.conference_name || '—'}{q.date_from ? ` — ${q.date_from}` : ''}</option>)}
+            </select>
+          </div>
+
+          <div style={{ overflowX: 'auto' }}>
+            <table className="quote-table" style={{ width: '100%' }}>
+              <tbody>
+                <tr style={{ background: '#E1F5EE' }}>
+                  <td style={{ textAlign: 'start' }}><b>📥 {t('cashIn')}</b></td><td></td>
+                </tr>
+                <tr><td style={{ textAlign: 'start' }}>{t('collectedFromClients')}</td>
+                  <td>{fmt(cashFlow.collected)}</td></tr>
+                {cashFlow.otherIn > 0.01 && (
+                  <tr><td style={{ textAlign: 'start' }}>{t('otherIncome')}</td>
+                    <td>{fmt(cashFlow.otherIn)}</td></tr>
+                )}
+                <tr style={{ fontWeight: 700 }}>
+                  <td style={{ textAlign: 'start' }}>{t('totalIn')}</td>
+                  <td style={{ color: '#0F6E56' }}>{fmt(cashFlow.actualIn)}</td></tr>
+
+                <tr style={{ background: '#FDECEC' }}>
+                  <td style={{ textAlign: 'start' }}><b>📤 {t('cashOut')}</b></td><td></td>
+                </tr>
+                <tr><td style={{ textAlign: 'start' }}>{t('paidToSuppliers')}</td>
+                  <td>{fmt(cashFlow.paidSuppliers)}</td></tr>
+                <tr><td style={{ textAlign: 'start' }}>{t('eventExpenses')}</td>
+                  <td>{fmt(cashFlow.spent)}</td></tr>
+                <tr style={{ fontWeight: 700 }}>
+                  <td style={{ textAlign: 'start' }}>{t('totalOut')}</td>
+                  <td style={{ color: '#A32D2D' }}>{fmt(cashFlow.actualOut)}</td></tr>
+
+                <tr style={{ background: '#F5F5F5', fontWeight: 700, fontSize: 14 }}>
+                  <td style={{ textAlign: 'start' }}>💰 {t('actualNet')}</td>
+                  <td style={{ color: cashFlow.actualNet >= 0 ? '#0F6E56' : '#A32D2D' }}>
+                    {fmt(cashFlow.actualNet)}</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div className="entity-meta" style={{ marginTop: 10 }}>
+            <span>⏳ {t('stillToCollect')}: <b style={{ color: '#0F6E56' }}>{fmt(cashFlow.stillIn)}</b></span>
+            <span>⏳ {t('stillToPay')}: <b style={{ color: '#A32D2D' }}>{fmt(cashFlow.stillOut)}</b></span>
+            <span>📊 {t('projectedNet')}: <b style={{ color: cashFlow.projectedNet >= 0 ? '#0F6E56' : '#A32D2D' }}>
+              {fmt(cashFlow.projectedNet)}</b></span>
+            {cashFlow.atRisk > 0.01 && (
+              <span>⚠ {t('likelyNet')}: <b>{fmt(cashFlow.likelyNet)}</b>
+                <small className="hint-inline"> ({t('likelyHint')})</small></span>
             )}
           </div>
-          {forecast.atRisk > 0.01 && (
-            <p className="hint-inline">{t('likelyNet')}: <b>{fmt(forecast.likely)}</b> — {t('likelyHint')}</p>
-          )}
+          <p className="hint-inline">{t('cashFlowHint')}</p>
         </div>
       )}
 
