@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useLang } from '../../lib/i18n.jsx'
-import { listRows, insertRow, updateRow, uploadDoc, openFile } from '../../lib/db.js'
+import { listRows, insertRow, updateRow, uploadDoc, openFile, downloadFile } from '../../lib/db.js'
 import { fmt } from '../../lib/tafqeet.js'
 import { Modal, EmptyState } from '../../components/ui.jsx'
 import SupplierLedger from './SupplierLedger.jsx'
@@ -235,6 +235,22 @@ export default function AccountsPage() {
                         onClick={() => setDetail({ kind: 'payable', row: r, openPay: true })}>
                         💵 {t('pay')}</button>
                     )}
+                    {tab === 'receivable' && r.bills.length > 0 && (
+                      <button className="mini-btn ok" style={{ marginInlineStart: 4 }}
+                        onClick={() => {
+                          // افتح على أقدم فاتورة لسه عليها باقي، وإلا آخر فاتورة
+                          const open = r.bills.find((q) => {
+                            const p = parsePays(q).reduce((a, x) => a + (+x.amount || 0), 0)
+                            return (+q.grand_total || 0) - p > 0.01
+                          }) || r.bills[r.bills.length - 1]
+                          const p = parsePays(open).reduce((a, x) => a + (+x.amount || 0), 0)
+                          const rest = (+open.grand_total || 0) - p
+                          setDetail({ kind: 'receivable', row: r })
+                          setClientPay({ quote: open, index: -1, data: {
+                            amount: rest > 0 ? rest : '', date: new Date().toISOString().slice(0, 10),
+                            method: 'cash', from_type: 'company', note: '' } })
+                        }}>💵 {t('addPayment')}</button>
+                    )}
                   </td>
                 </tr>
               )
@@ -291,8 +307,8 @@ export default function AccountsPage() {
                       {pay.receipt_url && (
                         <>
                           <button className="mini-btn" onClick={() => openFile(pay.receipt_url)}>👁 {t('view')}</button>
-                          <a className="mini-btn" href={pay.receipt_url} download target="_blank"
-                            rel="noreferrer" style={{ textDecoration: 'none' }}>💾 {t('save')}</a>
+                          <button className="mini-btn" onClick={() => downloadFile(pay.receipt_url)}>
+                            💾 {t('download')}</button>
                         </>
                       )}
                       {(detail.row.client?.whatsapp_number || detail.row.client?.phone) && (

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useLang } from '../../lib/i18n.jsx'
-import { listRows, insertRow, updateRow, deleteRow, uploadDoc, openFile } from '../../lib/db.js'
+import { listRows, insertRow, updateRow, deleteRow, uploadDoc, openFile, downloadFile } from '../../lib/db.js'
 import { fmt } from '../../lib/tafqeet.js'
 import { Modal, EmptyState } from '../../components/ui.jsx'
 import { printHtml } from '../exports/exportQuote.js'
@@ -312,8 +312,8 @@ export default function SupplierLedger({ supplier, onClose }) {
                 {p.receipt_url && (
                   <>
                     <button className="mini-btn" onClick={() => openFile(p.receipt_url)}>👁 {t('view')}</button>
-                    <a className="mini-btn" href={p.receipt_url} download target="_blank" rel="noreferrer"
-                      style={{ textDecoration: 'none' }}>💾 {t('save')}</a>
+                    <button className="mini-btn" onClick={() => downloadFile(p.receipt_url)}>
+                      💾 {t('download')}</button>
                   </>
                 )}
                 {supplier.whatsapp_number && (

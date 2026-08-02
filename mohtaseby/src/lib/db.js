@@ -112,6 +112,24 @@ export async function uploadDoc(bucket, file, path) {
   return data.signedUrl
 }
 
+// تنزيل ملف فعلياً — خاصية download لا تعمل عبر النطاقات، فنجلبه كـ Blob
+export async function downloadFile(url, filename) {
+  if (!url) return
+  try {
+    const res = await fetch(url)
+    if (!res.ok) throw new Error(String(res.status))
+    const blob = await res.blob()
+    const href = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = href
+    a.download = filename || (url.split('/').pop() || 'receipt').split('?')[0]
+    document.body.appendChild(a); a.click(); a.remove()
+    setTimeout(() => URL.revokeObjectURL(href), 4000)
+  } catch (e) {
+    window.open(url, '_blank')   // fallback: افتحه على الأقل
+  }
+}
+
 // عرض الملفات: روابط data: لا تُفتح مباشرة في المتصفح — نحولها Blob
 export function openFile(url) {
   if (!url) return
