@@ -33,3 +33,8 @@ drop policy if exists "anon all" on employee_suppliers;
 create policy "anon all" on employee_suppliers for all to anon using (true) with check (true);
 drop policy if exists "auth all" on employee_suppliers;
 create policy "auth all" on employee_suppliers for all to authenticated using (true) with check (true);
+
+-- ---- 4) تاريخ رفع الفاتورة الإلكترونية (أساس حساب المهلة الضريبية) ----
+alter table quotes       add column if not exists einvoice_date date;
+alter table manual_taxes add column if not exists einvoice_date date;
+alter table manual_taxes add column if not exists einvoice_done boolean default false;

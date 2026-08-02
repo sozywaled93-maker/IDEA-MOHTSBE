@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useLang } from '../../lib/i18n.jsx'
 import { listRows, insertRow, updateRow, deleteRow } from '../../lib/db.js'
 import { fmt } from '../../lib/tafqeet.js'
-import { taxDeadline, fmtDate, daysUntil } from '../../lib/taxes.js'
+import { taxDeadline, rowDeadline, taxBaseDate, fmtDate, daysUntil } from '../../lib/taxes.js'
 import { EmptyState } from '../../components/ui.jsx'
 
 export default function TaxesPage({ onChanged }) {
@@ -62,8 +62,8 @@ export default function TaxesPage({ onChanged }) {
             </tr></thead>
             <tbody>
               {rows.map((r) => {
-                const invDate = r.date_to || r.date_from
-                const dl = r.is_taxable && invDate ? taxDeadline(invDate) : null
+                const invDate = taxBaseDate(r)
+                const dl = r.is_taxable && invDate ? rowDeadline(r) : null
                 const left = dl ? daysUntil(dl) : null
                 const overdue = dl && left < 0 && (!r.tax_filed || !r.tax_paid)
                 return (
@@ -107,9 +107,22 @@ export default function TaxesPage({ onChanged }) {
                     </td>
                     <td>
                       <button className={`tax-btn ${r.einvoice_done ? 'done' : ''}`}
-                        onClick={() => toggle(r.id, 'einvoice_done', !r.einvoice_done)}>
+                        onClick={() => {
+                          const on = !r.einvoice_done
+                          toggle(r.id, 'einvoice_done', on)
+                          // أول ما يتعلّم "تم الرفع" نثبّت تاريخ اليوم كأساس للمهلة
+                          if (on && !r.einvoice_date) toggle(r.id, 'einvoice_date', new Date().toISOString().slice(0, 10))
+                        }}>
                         {r.einvoice_done ? '✓ ' + t('done_') : t('einvoice')}
                       </button>
+                      {r.einvoice_done && (
+                        <div style={{ marginTop: 4 }}>
+                          <input type="date" style={{ fontSize: 12 }}
+                            value={r.einvoice_date || ''}
+                            onChange={(e) => toggle(r.id, 'einvoice_date', e.target.value || null)} />
+                          <div className="hint-inline" style={{ fontSize: 11 }}>{t('deadlineFromThis')}</div>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 )
@@ -134,7 +147,7 @@ export default function TaxesPage({ onChanged }) {
               </tr></thead>
               <tbody>
                 {manual.map((m) => {
-                  const dl = m.invoice_date ? taxDeadline(m.invoice_date) : null
+                  const dl = taxBaseDate(m) ? rowDeadline(m) : null
                   const left = dl ? daysUntil(dl) : null
                   return (
                   <tr key={m.id} style={!m.invoice_date ? { background: '#FFF7E6' } : {}}>

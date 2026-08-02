@@ -9,6 +9,7 @@ import ConferencesPage from './modules/conferences/ConferencesPage.jsx'
 import ReceiptsPage from './modules/receipts/ReceiptsPage.jsx'
 import CostsPage from './modules/costs/CostsPage.jsx'
 import TreasuryPage from './modules/treasury/TreasuryPage.jsx'
+import AccountsPage from './modules/accounts/AccountsPage.jsx'
 import TaxesPage from './modules/taxes/TaxesPage.jsx'
 import TasksPage from './modules/tasks/TasksPage.jsx'
 import WorkOrdersPage from './modules/workorders/WorkOrdersPage.jsx'
@@ -26,6 +27,7 @@ const NAV = [
   { id: 'conferences', icon: '🎪' },
   { id: 'quotes', icon: '📄' },
   { id: 'treasury', icon: '🏦' },
+  { id: 'accounts', icon: '💼' },
   { id: 'taxes', icon: '🧮' },
   { id: 'alerts', icon: '🔔' },
   { id: 'tasks', icon: '✅' },
@@ -179,6 +181,7 @@ function Shell() {
         {page === 'receipts' && <ReceiptsPage />}
         {page === 'costs' && <CostsPage />}
         {page === 'treasury' && <TreasuryPage />}
+        {page === 'accounts' && <AccountsPage />}
         {page === 'taxes' && <TaxesPage onChanged={refreshReminders} />}
         {page === 'tasks' && <TasksPage />}
         {page === 'workorders' && <WorkOrdersPage />}

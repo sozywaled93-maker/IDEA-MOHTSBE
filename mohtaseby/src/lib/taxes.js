@@ -1,10 +1,23 @@
 // معادلة الضرائب المصرية:
-// فاتورة بتاريخ في شهر M → الإقرار والسداد من أول يوم لآخر يوم في شهر M+1
+// الفاتورة الإلكترونية تُرفع في شهر M → الإقرار والسداد من أول يوم لآخر يوم في شهر M+1
 export function taxDeadline(dateStr) {
   if (!dateStr) return null
   const d = new Date(dateStr)
   // آخر يوم في الشهر التالي
   return new Date(d.getFullYear(), d.getMonth() + 2, 0)
+}
+
+// التاريخ الذي تُحسب منه المهلة:
+// تاريخ رفع الفاتورة الإلكترونية إن وُجد، وإلا تاريخ الإيفنت كتقدير مبدئي.
+export function taxBaseDate(row) {
+  if (!row) return null
+  return row.einvoice_date || row.invoice_date || row.date_to || row.date_from || null
+}
+
+// المهلة الفعلية للصف (عرض سعر أو ضريبة يدوية)
+export function rowDeadline(row) {
+  const base = taxBaseDate(row)
+  return base ? taxDeadline(base) : null
 }
 
 export const fmtDate = (d) => d ? new Date(d).toISOString().slice(0, 10) : ''
@@ -25,8 +38,8 @@ export function buildReminders(quotes, manualTaxes = []) {
     }
 
     // 2) تذكير الإقرار والسداد للفواتير المنتهية
-    if (q.doc_type === 'invoice' && q.finished && q.is_taxable && invDate) {
-      const dl = taxDeadline(invDate)
+    if (q.doc_type === 'invoice' && q.finished && q.is_taxable && taxBaseDate(q)) {
+      const dl = rowDeadline(q)
       const left = daysUntil(dl)
       if (left <= 45) {
         const level = left <= 1 ? 'big' : (snoozed ? 'none' : 'flash')
@@ -44,8 +57,8 @@ export function buildReminders(quotes, manualTaxes = []) {
   }
   // الضرائب المسجلة يدوياً
   for (const m of manualTaxes) {
-    if (!m.invoice_date || (m.tax_filed && m.tax_paid)) continue
-    const dl = taxDeadline(m.invoice_date)
+    if (!taxBaseDate(m) || (m.tax_filed && m.tax_paid)) continue
+    const dl = rowDeadline(m)
     const left = daysUntil(dl)
     const snoozed = m.snooze_until && new Date(m.snooze_until) > today
     if (left <= 45) {
