@@ -78,6 +78,7 @@ export default function SupplierLedger({ supplier, onClose }) {
   }
   useEffect(() => {
     if (supplier.__openPay) setPayForm({ amount: '', conference_id: '', method: 'cash', pay_date: new Date().toISOString().slice(0, 10), note: '' })
+    if (supplier.__openFreeInv) setInv({ conference_id: '', invoice_date: new Date().toISOString().slice(0, 10), is_taxable: !!supplier.adds_tax, items: [], payments: [], notes: '' })
     load()
     listRows('quotes').then(setQuotes)
     listRows('conferences').then(setConferences)
@@ -310,14 +311,14 @@ export default function SupplierLedger({ supplier, onClose }) {
               <span style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
                 {p.receipt_url && (
                   <>
-                    <button className="icon-btn" title={t('view')} onClick={() => openFile(p.receipt_url)}>👁</button>
-                    <a className="icon-btn" title={t('save')} href={p.receipt_url}
-                      download target="_blank" rel="noreferrer" style={{ textDecoration: 'none' }}>💾</a>
+                    <button className="mini-btn" onClick={() => openFile(p.receipt_url)}>👁 {t('view')}</button>
+                    <a className="mini-btn" href={p.receipt_url} download target="_blank" rel="noreferrer"
+                      style={{ textDecoration: 'none' }}>💾 {t('save')}</a>
                   </>
                 )}
                 {supplier.whatsapp_number && (
-                  <button className="icon-btn" title={t('sendWhatsapp')}
-                    onClick={() => sendReceiptWhatsapp(p)}>📲</button>
+                  <button className="mini-btn ok" onClick={() => sendReceiptWhatsapp(p)}>
+                    📲 {t('sendWhatsapp')}</button>
                 )}
                 <button className="icon-btn" title={t('edit')} onClick={() => setPayForm({ ...p })}>✏️</button>
                 <button className="icon-btn" onClick={async () => { if (confirm(t('confirmDelete'))) { await deleteRow('supplier_payments', p.id); load() } }}>✕</button>

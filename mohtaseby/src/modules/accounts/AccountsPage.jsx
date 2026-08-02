@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useLang } from '../../lib/i18n.jsx'
-import { listRows, insertRow } from '../../lib/db.js'
+import { listRows, insertRow, updateRow, uploadDoc, openFile } from '../../lib/db.js'
 import { fmt } from '../../lib/tafqeet.js'
 import { Modal, EmptyState } from '../../components/ui.jsx'
 import SupplierLedger from './SupplierLedger.jsx'
@@ -52,6 +52,45 @@ export default function AccountsPage() {
   const [adjustments, setAdjustments] = useState([])
   const [detail, setDetail] = useState(null)    // {kind, row}
   const [payForm, setPayForm] = useState(null)
+  const [clientPay, setClientPay] = useState(null)
+
+  const setCP = (patch) => setClientPay((p) => p && ({ ...p, data: { ...p.data, ...patch } }))
+
+  // كل دفعات العميل محفوظة داخل quotes.payments — مصدر واحد للحقيقة
+  const saveQuotePayments = async (q, pays) => {
+    const clean = pays.map(({ __up, ...rest }) => rest).filter((x) => +x.amount)
+    await updateRow('quotes', q.id, { payments: JSON.stringify(clean) })
+    load()
+  }
+
+  const saveClientPayment = async () => {
+    if (!+clientPay.data.amount) return
+    const pays = parsePays(clientPay.quote)
+    const next = clientPay.index >= 0
+      ? pays.map((x, i) => i === clientPay.index ? clientPay.data : x)
+      : [...pays, clientPay.data]
+    await saveQuotePayments(clientPay.quote, next)
+    setClientPay(null)
+  }
+
+  const sendClientReceipt = (client, q, pay) => {
+    const num = String(client?.whatsapp_number || client?.phone || '').replace(/[^\d]/g, '')
+    if (!num) return alert(t('noWhatsappNumber'))
+    const intl = num.startsWith('0') ? '20' + num.slice(1) : num.startsWith('20') ? num : '20' + num
+    const method = pay.method || 'cash'
+    const lines = [
+      `${t('paymentReceipt')} — ${client.company_name || ''}`,
+      `${t('conferences')}: ${q.conference_name || '—'}`,
+      `${t('amount')}: ${fmt(pay.amount)}`,
+      `${t('date')}: ${pay.date || '—'}`,
+      `${t('paymentMethod')}: ${t(method) !== method ? t(method) : method}`,
+    ]
+    if (pay.cheque_no) lines.push(`${t('chequeNumber')}: ${pay.cheque_no}`)
+    if (pay.handed_by) lines.push(`${t('handedBy')}: ${pay.handed_by}`)
+    if (pay.from_name) lines.push(`${t('receivedFromName')}: ${pay.from_name}`)
+    if (pay.receipt_url) lines.push('', `${t('receiptImage')}: ${pay.receipt_url}`)
+    window.open(`https://wa.me/${intl}?text=${encodeURIComponent(lines.join('\n'))}`, '_blank')
+  }
 
   const load = () => {
     listRows('quotes').then(setQuotes).catch(() => setQuotes([]))
@@ -186,12 +225,15 @@ export default function AccountsPage() {
                   <td>{r.age != null ? `${r.age} ${t('dayWord')}` : '—'}</td>
                   <td>
                     <button className="mini-btn" onClick={() => setDetail({ kind: tab, row: r })}>{t('details')}</button>
+                    {tab === 'payable' && (
+                      <button className="mini-btn" style={{ marginInlineStart: 4 }}
+                        onClick={() => setDetail({ kind: 'payable', row: r, freeInv: true })}>
+                        🧾 {t('freeInvoice')}</button>
+                    )}
                     {tab === 'payable' && !closed && (
                       <button className="mini-btn ok" style={{ marginInlineStart: 4 }}
-                        onClick={() => setPayForm({
-                          supplier_id: r.id, amount: r.balance, method: 'cash',
-                          pay_date: new Date().toISOString().slice(0, 10), note: '', name: r.name,
-                        })}>💵 {t('pay')}</button>
+                        onClick={() => setDetail({ kind: 'payable', row: r, openPay: true })}>
+                        💵 {t('pay')}</button>
                     )}
                   </td>
                 </tr>
@@ -204,34 +246,144 @@ export default function AccountsPage() {
 
       {/* كشف الحساب الكامل */}
       {detail && detail.kind === 'payable' && (
-        <SupplierLedger supplier={detail.row.supplier}
+        <SupplierLedger
+          supplier={{ ...detail.row.supplier,
+            __openFreeInv: !!detail.freeInv, __openPay: !!detail.openPay }}
           onClose={() => { setDetail(null); load() }} />
       )}
 
       {detail && detail.kind === 'receivable' && (
-        <Modal title={`📥 ${detail.row.name}`} onClose={() => setDetail(null)} wide>
+        <Modal title={`📥 ${detail.row.name}`} onClose={() => { setDetail(null); load() }} wide>
           <div className="entity-meta" style={{ marginBottom: 12 }}>
             <span>{t('grandTotal')}: <b>{fmt(detail.row.due)}</b></span>
             <span>{t('collected')}: <b>{fmt(detail.row.paid)}</b></span>
             <span>{t('remainingAmt')}: <b style={{ color: detail.row.balance > 0.01 ? '#A32D2D' : '#0F6E56' }}>
               {fmt(detail.row.balance)}</b></span>
           </div>
-          <div className="card" style={{ padding: 12 }}>
-            <h3 style={{ fontSize: 14 }}>🧾 {t('invoices')}</h3>
-            {detail.row.bills.map((q) => {
-              const p = parsePays(q).reduce((a, x) => a + (+x.amount || 0), 0)
-              return (
-                <div className="manage-row" key={q.id}>
-                  <span>{q.date_from || '—'} — {q.conference_name || '—'} — <b>{fmt(q.grand_total)}</b>
-                    {' — '}{t('collected')}: {fmt(p)}
-                    {' — '}<b style={{ color: q.grand_total - p > 0.01 ? '#A32D2D' : '#0F6E56' }}>
-                      {t('remainingAmt')}: {fmt(q.grand_total - p)}</b></span>
+
+          {detail.row.bills.map((q) => {
+            const pays = parsePays(q)
+            const p = pays.reduce((a, x) => a + (+x.amount || 0), 0)
+            const rest = (+q.grand_total || 0) - p
+            return (
+              <div className="card" key={q.id} style={{ padding: 12, marginBottom: 10 }}>
+                <div className="entity-head">
+                  <b>🧾 {q.conference_name || '—'} <small className="hint-inline">{q.date_from || ''}</small></b>
+                  <span>
+                    <b>{fmt(q.grand_total)}</b> — {t('collected')}: {fmt(p)} —{' '}
+                    <b style={{ color: rest > 0.01 ? '#A32D2D' : '#0F6E56' }}>
+                      {rest > 0.01 ? `${t('remainingAmt')}: ${fmt(rest)}` : t('settled')}</b>
+                  </span>
                 </div>
-              )
-            })}
-            {!detail.row.bills.length && <p className="hint-inline">{t('noInvoicesYet')}</p>}
+
+                {pays.map((pay, i) => (
+                  <div className="manage-row" key={i}>
+                    <span>
+                      {pay.date || '—'} — <b style={{ color: '#0F6E56' }}>{fmt(pay.amount)}</b>
+                      {' — '}{t(pay.method || 'cash') !== (pay.method || 'cash') ? t(pay.method || 'cash') : pay.method}
+                      {pay.cheque_no ? ` — ${t('chequeNumber')}: ${pay.cheque_no}` : ''}
+                      {pay.handed_by ? ` — ${t('handedBy')}: ${pay.handed_by}` : ''}
+                      {pay.from_type ? ` — ${t('receivedFromType')}: ${t('from' + pay.from_type.charAt(0).toUpperCase() + pay.from_type.slice(1))}` : ''}
+                      {pay.from_name ? ` (${pay.from_name})` : ''}
+                      {pay.note ? ` — ${pay.note}` : ''}
+                    </span>
+                    <span style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                      {pay.receipt_url && (
+                        <>
+                          <button className="mini-btn" onClick={() => openFile(pay.receipt_url)}>👁 {t('view')}</button>
+                          <a className="mini-btn" href={pay.receipt_url} download target="_blank"
+                            rel="noreferrer" style={{ textDecoration: 'none' }}>💾 {t('save')}</a>
+                        </>
+                      )}
+                      {(detail.row.client?.whatsapp_number || detail.row.client?.phone) && (
+                        <button className="mini-btn ok" onClick={() => sendClientReceipt(detail.row.client, q, pay)}>
+                          📲 {t('sendWhatsapp')}</button>
+                      )}
+                      <button className="mini-btn" onClick={() => setClientPay({ quote: q, index: i, data: { ...pay } })}>
+                        ✏️ {t('edit')}</button>
+                      <button className="mini-btn danger" onClick={async () => {
+                        if (!confirm(t('confirmDelete'))) return
+                        await saveQuotePayments(q, pays.filter((_, j) => j !== i))
+                      }}>✕</button>
+                    </span>
+                  </div>
+                ))}
+                {!pays.length && <p className="hint-inline">{t('noPaymentsYet')}</p>}
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
+                  <button className="mini-btn ok" onClick={() => setClientPay({
+                    quote: q, index: -1,
+                    data: { amount: rest > 0 ? rest : '', date: new Date().toISOString().slice(0, 10),
+                      method: 'cash', from_type: 'company', note: '' },
+                  })}>💵 {t('addPayment')}</button>
+                </div>
+              </div>
+            )
+          })}
+          {!detail.row.bills.length && <p className="hint-inline">{t('noInvoicesYet')}</p>}
+        </Modal>
+      )}
+
+      {/* نافذة دفعة العميل */}
+      {clientPay && (
+        <Modal title={clientPay.index >= 0 ? t('editPayment') : t('addPayment')}
+          onClose={() => setClientPay(null)}>
+          <div className="grid2">
+            <div className="field"><label>{t('amount')}</label>
+              <input type="number" dir="ltr" autoFocus value={clientPay.data.amount}
+                onChange={(e) => setCP({ amount: e.target.value })} /></div>
+            <div className="field"><label>{t('date')}</label>
+              <input type="date" value={clientPay.data.date || ''}
+                onChange={(e) => setCP({ date: e.target.value })} /></div>
+            <div className="field"><label>{t('paymentMethod')}</label>
+              <select value={clientPay.data.method || 'cash'} onChange={(e) => setCP({ method: e.target.value })}>
+                <option value="cash">{t('cashWord')}</option>
+                <option value="cheque">{t('chequeWord')}</option>
+                <option value="bank">{t('bank')}</option>
+                <option value="instapay">{t('instapay')}</option>
+                <option value="vodafone">{t('vodafone')}</option>
+              </select></div>
+            <div className="field"><label>{t('receivedFromType')}</label>
+              <select value={clientPay.data.from_type || 'company'} onChange={(e) => setCP({ from_type: e.target.value })}>
+                <option value="company">{t('fromCompany')}</option>
+                <option value="association">{t('fromAssociation')}</option>
+                <option value="person">{t('fromPerson')}</option>
+              </select></div>
+            {(clientPay.data.method || 'cash') === 'cheque' && (
+              <div className="field"><label>{t('chequeNumber')}</label>
+                <input dir="ltr" value={clientPay.data.cheque_no || ''}
+                  onChange={(e) => setCP({ cheque_no: e.target.value })} /></div>
+            )}
+            {(clientPay.data.method || 'cash') === 'cash' && (
+              <div className="field"><label>{t('handedBy')}</label>
+                <input value={clientPay.data.handed_by || ''}
+                  onChange={(e) => setCP({ handed_by: e.target.value })} /></div>
+            )}
+            <div className="field"><label>{t('receivedFromName')}</label>
+              <input value={clientPay.data.from_name || ''}
+                onChange={(e) => setCP({ from_name: e.target.value })} /></div>
+            <div className="field"><label>{t('notes')}</label>
+              <input value={clientPay.data.note || ''} onChange={(e) => setCP({ note: e.target.value })} /></div>
+            <div className="field" style={{ gridColumn: '1 / -1' }}><label>{t('receiptImage')}</label>
+              <input type="file" accept="image/*,application/pdf" onChange={async (e) => {
+                const f = e.target.files?.[0]; if (!f) return
+                try { setCP({ __up: true }); setCP({ receipt_url: await uploadDoc('receipt-docs', f), __up: false }) }
+                catch (err) { setCP({ __up: false }); alert(t('uploadFailed') + ' ' + (err?.message || '')) }
+              }} />
+              {clientPay.data.__up && <span className="hint-inline">⏳ {t('uploading')}</span>}
+              {clientPay.data.receipt_url && !clientPay.data.__up && (
+                <span className="hint-inline">✅ {t('receiptAttached')}
+                  <button type="button" className="mini-btn" style={{ marginInlineStart: 6 }}
+                    onClick={() => openFile(clientPay.data.receipt_url)}>👁 {t('view')}</button>
+                  <button type="button" className="mini-btn" style={{ marginInlineStart: 4 }}
+                    onClick={() => setCP({ receipt_url: '' })}>✕</button>
+                </span>
+              )}
+            </div>
           </div>
-          <p className="hint-inline">{t('clientPaymentsHint')}</p>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
+            <button className="save-btn" onClick={saveClientPayment}>{t('save')}</button>
+          </div>
         </Modal>
       )}
 
