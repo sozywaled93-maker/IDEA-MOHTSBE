@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useLang } from '../../lib/i18n.jsx'
-import { listRows, insertRow, updateRow, deleteRow } from '../../lib/db.js'
+import { listRows, insertRow, updateRow, deleteRow, uploadDoc, openFile } from '../../lib/db.js'
 import { fmt } from '../../lib/tafqeet.js'
 import { Modal, EmptyState } from '../../components/ui.jsx'
 import { printHtml } from '../exports/exportQuote.js'
@@ -43,6 +43,25 @@ export default function SupplierLedger({ supplier, onClose }) {
   const [adjustments, setAdjustments] = useState([])
   const [payments, setPayments] = useState([])
   const [payForm, setPayForm] = useState(null)
+
+  // إرسال إيصال الدفعة على واتساب المورد
+  const sendReceiptWhatsapp = (p) => {
+    const num = String(supplier.whatsapp_number || supplier.phone || '').replace(/[^\d]/g, '')
+    if (!num) return alert(t('noWhatsappNumber'))
+    const intl = num.startsWith('0') ? '20' + num.slice(1) : num.startsWith('20') ? num : '20' + num
+    const methodTxt = t(p.method) !== p.method ? t(p.method) : p.method
+    const lines = [
+      `${t('paymentReceipt')} — ${supplier.supplier_name || ''}`,
+      `${t('amount')}: ${fmt(p.amount)}`,
+      `${t('date')}: ${p.pay_date || '—'}`,
+      `${t('paymentMethod')}: ${methodTxt}`,
+    ]
+    if (p.cheque_no) lines.push(`${t('chequeNumber')}: ${p.cheque_no}`)
+    if (p.handed_by) lines.push(`${t('handedBy')}: ${p.handed_by}`)
+    if (p.note) lines.push(`${t('notes')}: ${p.note}`)
+    if (p.receipt_url) lines.push('', `${t('receiptImage')}: ${p.receipt_url}`)
+    window.open(`https://wa.me/${intl}?text=${encodeURIComponent(lines.join('\n'))}`, '_blank')
+  }
   const [conferences, setConferences] = useState([])
   const [mains, setMains] = useState([])
   const [subs, setSubs] = useState([])
@@ -284,8 +303,22 @@ export default function SupplierLedger({ supplier, onClose }) {
             <div className="manage-row" key={p.id}>
               <span>{p.pay_date} — <b style={{ color: '#0F6E56' }}>{fmt(p.amount)}</b> — {t(p.method) !== p.method ? t(p.method) : p.method === 'cash' ? 'نقداً' : p.method === 'cheque' ? 'شيك' : p.method}
                 {p.conference_id ? ` — ${conferences.find((c) => c.id === p.conference_id)?.name || ''}` : ''}
-                {p.note ? ` — ${p.note}` : ''}</span>
-              <span style={{ display: 'flex', gap: 4 }}>
+                {p.cheque_no ? ` — ${t('chequeNumber')}: ${p.cheque_no}` : ''}
+                {p.handed_by ? ` — ${t('handedBy')}: ${p.handed_by}` : ''}
+                {p.note ? ` — ${p.note}` : ''}
+                {p.receipt_url ? ' 📎' : ''}</span>
+              <span style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
+                {p.receipt_url && (
+                  <>
+                    <button className="icon-btn" title={t('view')} onClick={() => openFile(p.receipt_url)}>👁</button>
+                    <a className="icon-btn" title={t('save')} href={p.receipt_url}
+                      download target="_blank" rel="noreferrer" style={{ textDecoration: 'none' }}>💾</a>
+                  </>
+                )}
+                {supplier.whatsapp_number && (
+                  <button className="icon-btn" title={t('sendWhatsapp')}
+                    onClick={() => sendReceiptWhatsapp(p)}>📲</button>
+                )}
                 <button className="icon-btn" title={t('edit')} onClick={() => setPayForm({ ...p })}>✏️</button>
                 <button className="icon-btn" onClick={async () => { if (confirm(t('confirmDelete'))) { await deleteRow('supplier_payments', p.id); load() } }}>✕</button>
               </span>
@@ -316,6 +349,39 @@ export default function SupplierLedger({ supplier, onClose }) {
                 <option value="">—</option>
                 {conferences.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select></div>
+            {payForm.method === 'cheque' && (
+              <div className="field"><label>{t('chequeNumber')}</label>
+                <input dir="ltr" value={payForm.cheque_no || ''}
+                  onChange={(e) => setPayForm((p) => ({ ...p, cheque_no: e.target.value }))} /></div>
+            )}
+            {payForm.method === 'cash' && (
+              <div className="field"><label>{t('handedBy')}</label>
+                <input value={payForm.handed_by || ''}
+                  onChange={(e) => setPayForm((p) => ({ ...p, handed_by: e.target.value }))} /></div>
+            )}
+            <div className="field" style={{ gridColumn: '1 / -1' }}><label>{t('receiptImage')}</label>
+              <input type="file" accept="image/*,application/pdf"
+                onChange={async (e) => {
+                  const f = e.target.files?.[0]; if (!f) return
+                  try {
+                    setPayForm((p) => ({ ...p, __uploading: true }))
+                    const url = await uploadDoc('receipt-docs', f)
+                    setPayForm((p) => ({ ...p, receipt_url: url, __uploading: false }))
+                  } catch (err) {
+                    setPayForm((p) => ({ ...p, __uploading: false }))
+                    alert(t('uploadFailed') + ' ' + (err?.message || ''))
+                  }
+                }} />
+              {payForm.__uploading && <span className="hint-inline">⏳ {t('uploading')}</span>}
+              {payForm.receipt_url && !payForm.__uploading && (
+                <span className="hint-inline">✅ {t('receiptAttached')}
+                  <button type="button" className="mini-btn" style={{ marginInlineStart: 6 }}
+                    onClick={() => openFile(payForm.receipt_url)}>👁 {t('view')}</button>
+                  <button type="button" className="mini-btn" style={{ marginInlineStart: 4 }}
+                    onClick={() => setPayForm((p) => ({ ...p, receipt_url: '' }))}>✕</button>
+                </span>
+              )}
+            </div>
             <div className="field" style={{ gridColumn: '1 / -1' }}><label>{t('notes')}</label>
               <input value={payForm.note} onChange={(e) => setPayForm((p) => ({ ...p, note: e.target.value }))} /></div>
           </div>
@@ -324,7 +390,9 @@ export default function SupplierLedger({ supplier, onClose }) {
               if (!+payForm.amount) return
               const body = { supplier_id: supplier.id, amount: +payForm.amount,
                 conference_id: payForm.conference_id || null, method: payForm.method,
-                pay_date: payForm.pay_date, note: payForm.note || '' }
+                pay_date: payForm.pay_date, note: payForm.note || '',
+                cheque_no: payForm.cheque_no || '', handed_by: payForm.handed_by || '',
+                receipt_url: payForm.receipt_url || '' }
               if (payForm.id) await updateRow('supplier_payments', payForm.id, body)
               else await insertRow('supplier_payments', body)
               setPayForm(null); load()

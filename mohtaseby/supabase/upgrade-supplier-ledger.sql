@@ -38,3 +38,13 @@ create policy "auth all" on employee_suppliers for all to authenticated using (t
 alter table quotes       add column if not exists einvoice_date date;
 alter table manual_taxes add column if not exists einvoice_date date;
 alter table manual_taxes add column if not exists einvoice_done boolean default false;
+
+-- ---- 5) صلاحيات المخازن + تفاصيل إيصالات الدفعات ----
+alter table employees
+  add column if not exists can_view_inventory    boolean default false,
+  add column if not exists can_view_exit_permits boolean default false;
+
+alter table supplier_payments
+  add column if not exists cheque_no   text default '',
+  add column if not exists handed_by   text default '',
+  add column if not exists receipt_url text default '';

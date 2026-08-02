@@ -179,6 +179,8 @@ async function buildKeyboard(chatId) {
     if (who.employee.can_view_supplier_ledger) sup.push({ text: '📊 كشف حسابات الموردين' })
     if (who.employee.can_view_supplier_prices) sup.push({ text: '📋 بنود وأسعار المورد' })
     if (sup.length) rows.push(sup)
+
+    if (who.employee.can_view_exit_permits) rows.push([{ text: '📦 أذون خروج المخازن' }])
   }
 
   return { keyboard: rows, resize_keyboard: true }
@@ -300,7 +302,9 @@ async function sendWorkOrderByKey(chatId, key, silent) {
  * ================================================================ */
 async function sendExitPermits(chatId) {
   const who = await whoIs(chatId)
-  if (!who.admin) return sendMsg(chatId, '⚠ الخاصية دي للإدارة فقط.')
+  if (!who.admin && !(who.employee && who.employee.can_view_exit_permits)) {
+    return sendMsg(chatId, '⚠ ملكش صلاحية على أذون خروج المخازن.')
+  }
 
   const permits = await fetchTable('exit_permits')
   if (!permits.length) return sendMsg(chatId, '📭 لا توجد أذون خروج مسجلة.')
@@ -324,7 +328,9 @@ async function sendExitPermits(chatId) {
 
 async function sendExitPermitById(chatId, id) {
   const who = await whoIs(chatId)
-  if (!who.admin) return sendMsg(chatId, '⚠ الخاصية دي للإدارة فقط.')
+  if (!who.admin && !(who.employee && who.employee.can_view_exit_permits)) {
+    return sendMsg(chatId, '⚠ ملكش صلاحية على أذون خروج المخازن.')
+  }
 
   const p = (await fetchTable('exit_permits')).find((x) => x.id === id)
   if (!p) return sendMsg(chatId, '⚠ الإذن غير موجود.')

@@ -299,6 +299,16 @@ export default function CompanySettingsPage() {
                     📋 {t('canViewSupplierPrices')}
                   </label>
                   <label className="check-row" style={{ padding: 0 }}>
+                    <input type="checkbox" checked={!!emp.can_view_inventory}
+                      onChange={(e) => patchEmp(emp.id, { can_view_inventory: e.target.checked })} />
+                    📦 {t('canViewInventory')}
+                  </label>
+                  <label className="check-row" style={{ padding: 0 }}>
+                    <input type="checkbox" checked={!!emp.can_view_exit_permits}
+                      onChange={(e) => patchEmp(emp.id, { can_view_exit_permits: e.target.checked })} />
+                    📤 {t('canViewExitPermits')}
+                  </label>
+                  <label className="check-row" style={{ padding: 0 }}>
                     <input type="checkbox" checked={(emp.supplier_scope || 'all') === 'all'}
                       onChange={(e) => patchEmp(emp.id, { supplier_scope: e.target.checked ? 'all' : 'selected' })} />
                     🌐 {t('seesAllSuppliers')}

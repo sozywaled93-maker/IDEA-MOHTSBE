@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useLang } from '../../lib/i18n.jsx'
-import { listRows, insertRow, updateRow, deleteRow } from '../../lib/db.js'
+import { listRows, insertRow, updateRow, deleteRow, uploadDoc, openFile } from '../../lib/db.js'
 import { fmt } from '../../lib/tafqeet.js'
 import { Modal, ConfirmDelete, EmptyState } from '../../components/ui.jsx'
 import { exportQuote } from '../exports/exportQuote.js'
@@ -409,20 +409,72 @@ export default function QuotesPage() {
         {q.doc_type === 'invoice' && (
           <div className="field" style={{ marginTop: 12 }}>
             <label>{t('payments')}</label>
-            {(q.payments || []).map((p, i) => (
-              <div className="sub-item-row" key={i} style={{ gridTemplateColumns: '140px 160px 1fr 36px' }}>
-                <input type="number" dir="ltr" placeholder={t('amount')} value={p.amount}
-                  onChange={(e) => setQ((prev) => ({ ...prev, payments: prev.payments.map((x, j) => j === i ? { ...x, amount: e.target.value } : x) }))} />
-                <input type="date" value={p.date || ''}
-                  onChange={(e) => setQ((prev) => ({ ...prev, payments: prev.payments.map((x, j) => j === i ? { ...x, date: e.target.value } : x) }))} />
-                <input placeholder={t('notes')} value={p.note || ''}
-                  onChange={(e) => setQ((prev) => ({ ...prev, payments: prev.payments.map((x, j) => j === i ? { ...x, note: e.target.value } : x) }))} />
-                <button type="button" className="icon-btn" onClick={() => setQ((prev) => ({ ...prev, payments: prev.payments.filter((_, j) => j !== i) }))}>✕</button>
+            {(q.payments || []).map((p, i) => {
+              const upd = (patch) => setQ((prev) => ({ ...prev, payments: prev.payments.map((x, j) => j === i ? { ...x, ...patch } : x) }))
+              return (
+              <div className="card" key={i} style={{ padding: 10, marginBottom: 8 }}>
+                <div className="grid2">
+                  <div className="field"><label>{t('amount')}</label>
+                    <input type="number" dir="ltr" value={p.amount} onChange={(e) => upd({ amount: e.target.value })} /></div>
+                  <div className="field"><label>{t('date')}</label>
+                    <input type="date" value={p.date || ''} onChange={(e) => upd({ date: e.target.value })} /></div>
+                  <div className="field"><label>{t('paymentMethod')}</label>
+                    <select value={p.method || 'cash'} onChange={(e) => upd({ method: e.target.value })}>
+                      <option value="cash">{t('cashWord')}</option>
+                      <option value="cheque">{t('chequeWord')}</option>
+                      <option value="bank">{t('bank')}</option>
+                      <option value="instapay">{t('instapay')}</option>
+                      <option value="vodafone">{t('vodafone')}</option>
+                    </select></div>
+                  <div className="field"><label>{t('receivedFromType')}</label>
+                    <select value={p.from_type || 'company'} onChange={(e) => upd({ from_type: e.target.value })}>
+                      <option value="company">{t('fromCompany')}</option>
+                      <option value="association">{t('fromAssociation')}</option>
+                      <option value="person">{t('fromPerson')}</option>
+                    </select></div>
+                  {(p.method || 'cash') === 'cheque' && (
+                    <div className="field"><label>{t('chequeNumber')}</label>
+                      <input dir="ltr" value={p.cheque_no || ''} onChange={(e) => upd({ cheque_no: e.target.value })} /></div>
+                  )}
+                  {(p.method || 'cash') === 'cash' && (
+                    <div className="field"><label>{t('handedBy')}</label>
+                      <input value={p.handed_by || ''} onChange={(e) => upd({ handed_by: e.target.value })} /></div>
+                  )}
+                  <div className="field"><label>{t('receivedFromName')}</label>
+                    <input value={p.from_name || ''} onChange={(e) => upd({ from_name: e.target.value })} /></div>
+                  <div className="field"><label>{t('notes')}</label>
+                    <input value={p.note || ''} onChange={(e) => upd({ note: e.target.value })} /></div>
+                  <div className="field" style={{ gridColumn: '1 / -1' }}><label>{t('receiptImage')}</label>
+                    <input type="file" accept="image/*,application/pdf"
+                      onChange={async (e) => {
+                        const f = e.target.files?.[0]; if (!f) return
+                        try {
+                          upd({ __uploading: true })
+                          const url = await uploadDoc('receipt-docs', f)
+                          upd({ receipt_url: url, __uploading: false })
+                        } catch (err) { upd({ __uploading: false }); alert(t('uploadFailed') + ' ' + (err?.message || '')) }
+                      }} />
+                    {p.__uploading && <span className="hint-inline">⏳ {t('uploading')}</span>}
+                    {p.receipt_url && !p.__uploading && (
+                      <span className="hint-inline">✅ {t('receiptAttached')}
+                        <button type="button" className="mini-btn" style={{ marginInlineStart: 6 }}
+                          onClick={() => openFile(p.receipt_url)}>👁 {t('view')}</button>
+                        <button type="button" className="mini-btn" style={{ marginInlineStart: 4 }}
+                          onClick={() => upd({ receipt_url: '' })}>✕</button>
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                  <button type="button" className="mini-btn danger"
+                    onClick={() => setQ((prev) => ({ ...prev, payments: prev.payments.filter((_, j) => j !== i) }))}>
+                    ✕ {t('delete')}</button>
+                </div>
               </div>
-            ))}
+            )})}
             <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
               <button type="button" className="add-btn" style={{ padding: '7px 14px', fontSize: 13 }}
-                onClick={() => setQ((prev) => ({ ...prev, payments: [...(prev.payments || []), { amount: '', date: '', note: '' }] }))}>
+                onClick={() => setQ((prev) => ({ ...prev, payments: [...(prev.payments || []), { amount: '', date: new Date().toISOString().slice(0, 10), method: 'cash', from_type: 'company', note: '' }] }))}>
                 + {t('addPayment')}
               </button>
               <span style={{ fontSize: 13.5 }}>

@@ -6,7 +6,6 @@ import { useLang } from '../../lib/i18n.jsx'
 import { listRows, insertRow, updateRow, deleteRow } from '../../lib/db.js'
 import { fmt } from '../../lib/tafqeet.js'
 import { EmptyState, Modal } from '../../components/ui.jsx'
-import { TelegramBadge, TelegramInviteButton } from '../../components/TelegramBadge.jsx'
 import * as XLSX from 'xlsx'
 
 export default function TreasuryPage() {
@@ -87,49 +86,7 @@ export default function TreasuryPage() {
         <button className={tab === 'overview' ? 'active' : ''} onClick={() => setTab('overview')}>{t('eventCosts')}</button>
         <button className={tab === 'expenses' ? 'active' : ''} onClick={() => setTab('expenses')}>{t('expenses')}</button>
         <button className={tab === 'income' ? 'active' : ''} onClick={() => setTab('income')}>{t('income')}</button>
-        <button className={tab === 'tg' ? 'active' : ''} onClick={() => setTab('tg')}>🤖 {t('tgPermissions')}</button>
       </div>
-
-      {/* ===== إسناد صلاحيات الحسابات والمصاريف على تليجرام ===== */}
-      {tab === 'tg' && (
-        <div className="card">
-          <h3>🤖 {t('tgPermissions')}</h3>
-          <p className="hint-inline">{t('tgPermissionsHint')}</p>
-          {employees.length === 0 ? <EmptyState /> : (
-            <div style={{ marginTop: 10 }}>
-              {employees.map((emp) => (
-                <div className="emp-card" key={emp.id}>
-                  <div className="emp-head" style={{ flexWrap: 'wrap', gap: 8 }}>
-                    <b style={{ flex: 1 }}>{emp.name || '—'}
-                      {emp.job_title && <small className="hint-inline"> — {emp.job_title}</small>}
-                    </b>
-                    <TelegramBadge row={emp} small />
-                    {!emp.telegram_chat_id && <TelegramInviteButton targetType="employee" row={emp} />}
-                  </div>
-                  <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', marginTop: 8 }}>
-                    <label className="check-row" style={{ padding: 0 }}>
-                      <input type="checkbox" checked={!!emp.can_view_finance}
-                        onChange={async (e) => {
-                          await updateRow('employees', emp.id, { can_view_finance: e.target.checked })
-                          listRows('employees').then(setEmployees)
-                        }} />
-                      💼 {t('canViewFinance')}
-                    </label>
-                    <label className="check-row" style={{ padding: 0 }}>
-                      <input type="checkbox" checked={!!emp.can_log_expense}
-                        onChange={async (e) => {
-                          await updateRow('employees', emp.id, { can_log_expense: e.target.checked })
-                          listRows('employees').then(setEmployees)
-                        }} />
-                      💰 {t('canLogExpense')}
-                    </label>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
 
       {/* ===== تكاليف المؤتمر ===== */}
       {tab === 'overview' && (
