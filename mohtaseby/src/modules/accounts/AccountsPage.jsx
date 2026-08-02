@@ -237,41 +237,56 @@ export default function AccountsPage() {
   // ===== التدفق النقدي الكامل =====
   // اللي حصل فعلاً (كاش خرج/دخل) + اللي لسه متوقّع
   const cashFlow = useMemo(() => {
-    const scoped = (qid) => flowScope === 'all' || qid === flowScope
+    // الربط مزدوج: البرنامج يربط بـ quote_id والبوت يربط بـ conference_id
+    const selQuote = quotes.find((q) => q.id === flowScope)
+    const selConf = selQuote?.conference_id || null
+    const scoped = (row) => {
+      if (flowScope === 'all') return true
+      if (!row) return false
+      if (row.quote_id && row.quote_id === flowScope) return true
+      if (selConf && row.conference_id && row.conference_id === selConf) return true
+      return false
+    }
 
     // ① محصّل فعلاً من العملاء (دفعات مسجلة على الفواتير)
     const collected = quotes.reduce((s, q) => {
-      if (q.doc_type !== 'invoice' || !scoped(q.id)) return s
+      if (q.doc_type !== 'invoice' || (flowScope !== 'all' && q.id !== flowScope)) return s
       return s + parsePays(q).reduce((a, x) => a + (+x.amount || 0), 0)
     }, 0)
 
     // ② إيرادات إضافية مسجلة في الخزنة
-    const otherIn = incomes.reduce((s, i) => s + (scoped(i.quote_id) ? (+i.amount || 0) : 0), 0)
+    const otherIn = incomes.reduce((s, i) => s + (scoped(i) ? (+i.amount || 0) : 0), 0)
 
     // ③ مدفوع فعلاً للموردين (دفعات الفواتير + الدفعات المستقلة)
     const paidSuppliers = suppliers.reduce((s, sup) => {
-      const fromInv = invoices.filter((x) => x.supplier_id === sup.id && scoped(x.quote_id))
+      const fromInv = invoices.filter((x) => x.supplier_id === sup.id && scoped(x))
         .reduce((a, i) => a + invPaid(i), 0)
-      const direct = flowScope === 'all'
-        ? payments.filter((x) => x.supplier_id === sup.id).reduce((a, p) => a + (+p.amount || 0), 0)
-        : 0
+      const direct = payments.filter((x) => x.supplier_id === sup.id && scoped(x))
+        .reduce((a, p) => a + (+p.amount || 0), 0)
       return s + fromInv + direct
     }, 0)
 
     // ④ مصاريف الخزنة (بنزين، فطار، فندق... إلخ)
-    const spent = expenses.reduce((s, e) => s + (scoped(e.quote_id) ? (+e.amount || 0) : 0), 0)
+    const spent = expenses.reduce((s, e) => s + (scoped(e) ? (+e.amount || 0) : 0), 0)
 
     // ⑤ اللي لسه لينا / علينا
     const stillIn = quotes.reduce((s, q) => {
-      if (q.doc_type !== 'invoice' || !scoped(q.id)) return s
+      if (q.doc_type !== 'invoice' || (flowScope !== 'all' && q.id !== flowScope)) return s
       const p = parsePays(q).reduce((a, x) => a + (+x.amount || 0), 0)
       return s + Math.max((+q.grand_total || 0) - p, 0)
     }, 0)
     const stillOut = flowScope === 'all'
       ? payables.reduce((s, r) => s + Math.max(r.balance, 0), 0)
       : suppliers.reduce((s, sup) => {
-          const inv = invoices.filter((x) => x.supplier_id === sup.id && x.quote_id === flowScope)
-          return s + inv.reduce((a, i) => a + Math.max(withVat(i, sup) - invPaid(i), 0), 0)
+          // ① تكلفة بنود المورد داخل العرض المختار نفسه
+          const auto = selQuote ? autoPulls(sup.id, [selQuote]) : 0
+          // ② فواتير يدوية مربوطة بالعرض أو بمؤتمره
+          const inv = invoices.filter((x) => x.supplier_id === sup.id && scoped(x))
+          const manual = inv.reduce((a, i) => a + withVat(i, sup), 0)
+          const paid = inv.reduce((a, i) => a + invPaid(i), 0)
+            + payments.filter((x) => x.supplier_id === sup.id && scoped(x))
+                .reduce((a, p) => a + (+p.amount || 0), 0)
+          return s + Math.max(auto + manual - paid, 0)
         }, 0)
 
     const atRisk = flowScope === 'all'
