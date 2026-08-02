@@ -293,14 +293,35 @@ export default function AccountsPage() {
       ? receivables.reduce((s, r) => s + (r.balance > 0.01 && (r.age ?? 0) > 90 ? r.balance : 0), 0)
       : 0
 
+    // ===== الضرائب =====
+    // grand_total = subtotal − WHT(3%) + VAT(14%)
+    // فالـ WHT مخصومة أصلاً من الفاتورة (العميل يورّدها للمصلحة نيابةً عنك).
+    // أما الـ VAT فداخلة ضمن ما تحصّله وهي ليست إيرادك — تورّدها للمصلحة.
+    const taxable = quotes.filter((q) =>
+      q.doc_type === 'invoice' && q.is_taxable && (flowScope === 'all' || q.id === flowScope))
+    const vatTotal = taxable.reduce((a, q) => a + (+q.vat_amount || 0), 0)
+    const whtTotal = taxable.reduce((a, q) => a + (+q.wht_amount || 0), 0)
+    const grandTaxable = taxable.reduce((a, q) => a + (+q.grand_total || 0), 0)
+
+    // نسبة التحصيل تحدد كم من الـ VAT وصل فعلاً لخزنتك
+    const collectedTaxable = taxable.reduce((a, q) =>
+      a + parsePays(q).reduce((x, p) => x + (+p.amount || 0), 0), 0)
+    const ratio = grandTaxable > 0.01 ? Math.min(collectedTaxable / grandTaxable, 1) : 0
+    const vatCollected = vatTotal * ratio
+
     const actualIn = collected + otherIn
     const actualOut = paidSuppliers + spent
+    const actualNet = actualIn - actualOut
+    const projectedNet = (actualIn + stillIn) - (actualOut + stillOut)
+
     return {
       collected, otherIn, paidSuppliers, spent, stillIn, stillOut, atRisk,
-      actualIn, actualOut,
-      actualNet: actualIn - actualOut,                       // الكاش اللي اتحرك فعلاً
-      projectedNet: (actualIn + stillIn) - (actualOut + stillOut),  // لو كله اتحصّل واتدفع
-      likelyNet: (actualIn + stillIn - atRisk) - (actualOut + stillOut),
+      actualIn, actualOut, vatTotal, whtTotal, vatCollected,
+      actualNet,                                     // الكاش اللي اتحرك فعلاً
+      actualNetAfterVat: actualNet - vatCollected,   // بعد استبعاد VAT محصّلة
+      projectedNet,                                  // لو كله اتحصّل واتدفع
+      projectedNetAfterVat: projectedNet - vatTotal, // صافي خزنة الشركة
+      likelyNet: (actualIn + stillIn - atRisk) - (actualOut + stillOut) - vatTotal,
     }
   }, [quotes, incomes, expenses, suppliers, invoices, payments, payables, receivables, flowScope])
 
@@ -448,14 +469,34 @@ export default function AccountsPage() {
           <div className="entity-meta" style={{ marginTop: 10 }}>
             <span>⏳ {t('stillToCollect')}: <b style={{ color: '#0F6E56' }}>{fmt(cashFlow.stillIn)}</b></span>
             <span>⏳ {t('stillToPay')}: <b style={{ color: '#A32D2D' }}>{fmt(cashFlow.stillOut)}</b></span>
-            <span>📊 {t('projectedNet')}: <b style={{ color: cashFlow.projectedNet >= 0 ? '#0F6E56' : '#A32D2D' }}>
-              {fmt(cashFlow.projectedNet)}</b></span>
-            {cashFlow.atRisk > 0.01 && (
-              <span>⚠ {t('likelyNet')}: <b>{fmt(cashFlow.likelyNet)}</b>
-                <small className="hint-inline"> ({t('likelyHint')})</small></span>
-            )}
           </div>
+
+          {/* من الصافي المتوقّع إلى صافي خزنة الشركة */}
+          <div style={{ overflowX: 'auto', marginTop: 10 }}>
+            <table className="quote-table" style={{ width: '100%' }}>
+              <tbody>
+                <tr><td style={{ textAlign: 'start' }}>📊 {t('projectedNet')}</td>
+                  <td><b>{fmt(cashFlow.projectedNet)}</b></td></tr>
+                {cashFlow.vatTotal > 0.01 && (
+                  <tr><td style={{ textAlign: 'start' }}>− {t('vatDue')} (14%)</td>
+                    <td style={{ color: '#A32D2D' }}>− {fmt(cashFlow.vatTotal)}</td></tr>
+                )}
+                <tr style={{ background: '#E1F5EE', fontWeight: 700, fontSize: 14 }}>
+                  <td style={{ textAlign: 'start' }}>🏦 {t('netToCompany')}</td>
+                  <td style={{ color: cashFlow.projectedNetAfterVat >= 0 ? '#0F6E56' : '#A32D2D' }}>
+                    {fmt(cashFlow.projectedNetAfterVat)}</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          {cashFlow.whtTotal > 0.01 && (
+            <p className="hint-inline">ℹ️ {t('whtNote').replace('{amt}', fmt(cashFlow.whtTotal))}</p>
+          )}
+          {cashFlow.atRisk > 0.01 && (
+            <p className="hint-inline">⚠ {t('likelyNet')}: <b>{fmt(cashFlow.likelyNet)}</b> — {t('likelyHint')}</p>
+          )}
           <p className="hint-inline">{t('cashFlowHint')}</p>
+          <p className="hint-inline">{t('vatNote')}</p>
         </div>
       )}
 
