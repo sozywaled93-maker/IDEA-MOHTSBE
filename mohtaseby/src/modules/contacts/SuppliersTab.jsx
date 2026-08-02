@@ -5,7 +5,6 @@ import { listRows, insertRow, updateRow, deleteRow } from '../../lib/db.js'
 import { Modal, ConfirmDelete, EmptyState } from '../../components/ui.jsx'
 import ViewDetails from '../../components/ViewDetails.jsx'
 import ChatIdField from '../../components/ChatIdField.jsx'
-import SupplierLedger from './SupplierLedger.jsx'
 import { WorkOrderModal } from '../quotes/QuotesPage.jsx'
 import { loadSettings } from '../../lib/supabase.js'
 import { BlurInput } from '../../components/BlurInput.jsx'
@@ -22,7 +21,6 @@ export default function SuppliersTab() {
   const [links, setLinks] = useState([])       // supplier_main_items
   const [form, setForm] = useState(null)       // { ...supplier, main_ids: [] }
   const [del, setDel] = useState(null)
-  const [ledger, setLedger] = useState(null)
   const [quotes, setQuotes] = useState([])
   const [supWorkOrders, setSupWorkOrders] = useState(null)   // { supplier, list: [quotes مرتبطة] }
   const [printQuote, setPrintQuote] = useState(null)          // { quote, supplierId } — أمر الشغل المفتوح للطباعة
@@ -117,7 +115,6 @@ export default function SuppliersTab() {
                 <button onClick={() => setViewRow(r)}>👁 {t('view')}</button>
                 <button onClick={() => openForm(r)}>{t('edit')}</button>
                 <button onClick={() => setPricing(r)}>💲 {t('supplierPrices')}</button>
-                <button onClick={() => setLedger(r)}>📒 {t('ledger')}</button>
                 {(() => {
                   const list = quotes.filter((qq) => (() => {
                     const d = typeof qq.data === 'string' ? JSON.parse(qq.data || '{}') : (qq.data || {})
@@ -127,7 +124,6 @@ export default function SuppliersTab() {
                     <button className="mini-btn tg" onClick={() => setSupWorkOrders({ supplier: r, list })}>🛠 {t('workOrder')} ({list.length})</button>
                   )
                 })()}
-                <button className="convert" onClick={() => setLedger({ ...r, __openPay: true })}>💵 {t('addPayment')}</button>
                 <button className="danger" onClick={() => setDel(r.id)}>{t('delete')}</button>
               </div>
             </div>
@@ -279,7 +275,6 @@ export default function SuppliersTab() {
           onClose={() => setPrintQuote(null)}
         />
       )}
-      {ledger && <SupplierLedger supplier={ledger} onClose={() => setLedger(null)} />}
       {viewRow && (
         <ViewDetails title={viewRow.supplier_name} onClose={() => setViewRow(null)} rows={[
           { label: t('companyName'), value: viewRow.company_name },

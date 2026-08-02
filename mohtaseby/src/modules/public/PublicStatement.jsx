@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { listRows } from '../../lib/db.js'
 import { fmt } from '../../lib/tafqeet.js'
-import { autoPulls } from '../contacts/SupplierLedger.jsx'
+import { autoPulls } from '../accounts/SupplierLedger.jsx'
 
 // صفحة عامة للمورد فقط (يفتحها عبر QR) — قراءة بدون أي وصول للنظام
 export default function PublicStatement({ token }) {

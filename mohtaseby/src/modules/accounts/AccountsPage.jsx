@@ -3,6 +3,8 @@ import { useLang } from '../../lib/i18n.jsx'
 import { listRows, insertRow } from '../../lib/db.js'
 import { fmt } from '../../lib/tafqeet.js'
 import { Modal, EmptyState } from '../../components/ui.jsx'
+import SupplierLedger from './SupplierLedger.jsx'
+import FreeLedger from './FreeLedger.jsx'
 
 /* ---------- حسابات مطابقة لكشف حساب المورد حرفياً ---------- */
 const invTotal = (inv) => (inv.items || []).reduce((s, i) => s + (+i.qty || 0) * (+i.price || 0) * (+i.days || 1), 0)
@@ -142,8 +144,14 @@ export default function AccountsPage() {
         <button className={tab === 'receivable' ? 'active' : ''} onClick={() => setTab('receivable')}>
           📥 {t('owedToUs')}
         </button>
+        <button className={tab === 'free' ? 'active' : ''} onClick={() => setTab('free')}>
+          🧾 {t('freeSupplier')}
+        </button>
       </div>
 
+      {tab === 'free' && <FreeLedger />}
+
+      {tab !== 'free' && <>
       <div className="toolbar" style={{ marginBottom: 10 }}>
         <div className="seg">
           <button className={filter === 'open' ? 'active' : ''} onClick={() => setFilter('open')}>{t('openOnly')}</button>
@@ -192,59 +200,38 @@ export default function AccountsPage() {
           </tbody>
         </table></div>
       )}
+      </>}
 
-      {/* تفاصيل */}
-      {detail && (
-        <Modal title={`${detail.kind === 'payable' ? '📤' : '📥'} ${detail.row.name}`} onClose={() => setDetail(null)} wide>
+      {/* كشف الحساب الكامل */}
+      {detail && detail.kind === 'payable' && (
+        <SupplierLedger supplier={detail.row.supplier}
+          onClose={() => { setDetail(null); load() }} />
+      )}
+
+      {detail && detail.kind === 'receivable' && (
+        <Modal title={`📥 ${detail.row.name}`} onClose={() => setDetail(null)} wide>
           <div className="entity-meta" style={{ marginBottom: 12 }}>
             <span>{t('grandTotal')}: <b>{fmt(detail.row.due)}</b></span>
             <span>{t('collected')}: <b>{fmt(detail.row.paid)}</b></span>
             <span>{t('remainingAmt')}: <b style={{ color: detail.row.balance > 0.01 ? '#A32D2D' : '#0F6E56' }}>
               {fmt(detail.row.balance)}</b></span>
           </div>
-
-          {detail.kind === 'payable' ? (
-            <>
-              {detail.row.invoices.length > 0 && (
-                <div className="card" style={{ padding: 12 }}>
-                  <h3 style={{ fontSize: 14 }}>🧾 {t('invoices')}</h3>
-                  {detail.row.invoices.map((i) => (
-                    <div className="manage-row" key={i.id}>
-                      <span>{i.invoice_date || '—'} — <b>{fmt(withVat(i, detail.row.supplier))}</b>
-                        {' — '}{t('collected')}: {fmt(invPaid(i))}</span>
-                    </div>
-                  ))}
+          <div className="card" style={{ padding: 12 }}>
+            <h3 style={{ fontSize: 14 }}>🧾 {t('invoices')}</h3>
+            {detail.row.bills.map((q) => {
+              const p = parsePays(q).reduce((a, x) => a + (+x.amount || 0), 0)
+              return (
+                <div className="manage-row" key={q.id}>
+                  <span>{q.date_from || '—'} — {q.conference_name || '—'} — <b>{fmt(q.grand_total)}</b>
+                    {' — '}{t('collected')}: {fmt(p)}
+                    {' — '}<b style={{ color: q.grand_total - p > 0.01 ? '#A32D2D' : '#0F6E56' }}>
+                      {t('remainingAmt')}: {fmt(q.grand_total - p)}</b></span>
                 </div>
-              )}
-              {detail.row.payments.length > 0 && (
-                <div className="card" style={{ padding: 12 }}>
-                  <h3 style={{ fontSize: 14 }}>💵 {t('payments')}</h3>
-                  {detail.row.payments.map((p) => (
-                    <div className="manage-row" key={p.id}>
-                      <span>{p.pay_date} — <b style={{ color: '#0F6E56' }}>{fmt(p.amount)}</b>
-                        {p.note ? ` — ${p.note}` : ''}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </>
-          ) : (
-            <div className="card" style={{ padding: 12 }}>
-              <h3 style={{ fontSize: 14 }}>🧾 {t('invoices')}</h3>
-              {detail.row.bills.map((q) => {
-                const p = parsePays(q).reduce((a, x) => a + (+x.amount || 0), 0)
-                return (
-                  <div className="manage-row" key={q.id}>
-                    <span>{q.date_from || '—'} — {q.conference_name || '—'} — <b>{fmt(q.grand_total)}</b>
-                      {' — '}{t('collected')}: {fmt(p)}
-                      {' — '}<b style={{ color: q.grand_total - p > 0.01 ? '#A32D2D' : '#0F6E56' }}>
-                        {t('remainingAmt')}: {fmt(q.grand_total - p)}</b></span>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-          <p className="hint-inline">{t('accountsDetailHint')}</p>
+              )
+            })}
+            {!detail.row.bills.length && <p className="hint-inline">{t('noInvoicesYet')}</p>}
+          </div>
+          <p className="hint-inline">{t('clientPaymentsHint')}</p>
         </Modal>
       )}
 
