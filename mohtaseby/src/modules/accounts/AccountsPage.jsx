@@ -56,6 +56,8 @@ export default function AccountsPage() {
   const [incomes, setIncomes] = useState([])
   const [conferences, setConferences] = useState([])
   const [flowScope, setFlowScope] = useState('all')   // all | آخر مشروع
+  const [showSupBreak, setShowSupBreak] = useState(true)
+  const [showExpBreak, setShowExpBreak] = useState(false)
   const [detail, setDetail] = useState(null)    // {kind, row}
   const [payForm, setPayForm] = useState(null)
   const [clientPay, setClientPay] = useState(null)
@@ -257,17 +259,30 @@ export default function AccountsPage() {
     // ② إيرادات إضافية مسجلة في الخزنة
     const otherIn = incomes.reduce((s, i) => s + (scoped(i) ? (+i.amount || 0) : 0), 0)
 
-    // ③ مدفوع فعلاً للموردين (دفعات الفواتير + الدفعات المستقلة)
+    // ③ مدفوع فعلاً للموردين (دفعات الفواتير + الدفعات المستقلة) — مفصّلة مورد مورد
+    const supplierBreakdown = []
     const paidSuppliers = suppliers.reduce((s, sup) => {
       const fromInv = invoices.filter((x) => x.supplier_id === sup.id && scoped(x))
         .reduce((a, i) => a + invPaid(i), 0)
       const direct = payments.filter((x) => x.supplier_id === sup.id && scoped(x))
         .reduce((a, p) => a + (+p.amount || 0), 0)
-      return s + fromInv + direct
+      const amt = fromInv + direct
+      if (amt > 0.01) {
+        supplierBreakdown.push({
+          id: sup.id,
+          name: sup.supplier_name || sup.company_name || '—',
+          amount: amt,
+          count: invoices.filter((x) => x.supplier_id === sup.id && scoped(x)).length
+            + payments.filter((x) => x.supplier_id === sup.id && scoped(x)).length,
+        })
+      }
+      return s + amt
     }, 0)
+    supplierBreakdown.sort((a, b) => b.amount - a.amount)
 
-    // ④ مصاريف الخزنة (بنزين، فطار، فندق... إلخ)
-    const spent = expenses.reduce((s, e) => s + (scoped(e) ? (+e.amount || 0) : 0), 0)
+    // ④ مصاريف الخزنة (بنزين، فطار، فندق... إلخ) — سطر سطر
+    const expenseRows = expenses.filter((e) => scoped(e) && (+e.amount || 0) > 0.01)
+    const spent = expenseRows.reduce((s, e) => s + (+e.amount || 0), 0)
 
     // ⑤ اللي لسه لينا / علينا
     const stillIn = quotes.reduce((s, q) => {
@@ -316,6 +331,7 @@ export default function AccountsPage() {
 
     return {
       collected, otherIn, paidSuppliers, spent, stillIn, stillOut, atRisk,
+      supplierBreakdown, expenseRows,
       actualIn, actualOut, vatTotal, whtTotal, vatCollected,
       actualNet,                                     // الكاش اللي اتحرك فعلاً
       actualNetAfterVat: actualNet - vatCollected,   // بعد استبعاد VAT محصّلة
@@ -450,10 +466,39 @@ export default function AccountsPage() {
                 <tr style={{ background: '#FDECEC' }}>
                   <td style={{ textAlign: 'start' }}><b>📤 {t('cashOut')}</b></td><td></td>
                 </tr>
-                <tr><td style={{ textAlign: 'start' }}>{t('paidToSuppliers')}</td>
+                <tr style={{ cursor: cashFlow.supplierBreakdown.length ? 'pointer' : 'default' }}
+                  onClick={() => cashFlow.supplierBreakdown.length && setShowSupBreak((v) => !v)}>
+                  <td style={{ textAlign: 'start' }}>
+                    {cashFlow.supplierBreakdown.length > 0 && (showSupBreak ? '▾ ' : '▸ ')}
+                    {t('paidToSuppliers')}
+                    {cashFlow.supplierBreakdown.length > 0 &&
+                      <small className="hint-inline"> ({cashFlow.supplierBreakdown.length})</small>}
+                  </td>
                   <td>{fmt(cashFlow.paidSuppliers)}</td></tr>
-                <tr><td style={{ textAlign: 'start' }}>{t('eventExpenses')}</td>
+                {showSupBreak && cashFlow.supplierBreakdown.map((b) => (
+                  <tr key={b.id} style={{ background: '#FAFAFA' }}>
+                    <td style={{ textAlign: 'start', paddingInlineStart: 24, fontSize: 12.5, color: '#555' }}>
+                      ↳ {b.name} <span className="hint-inline">({b.count})</span></td>
+                    <td style={{ fontSize: 12.5, color: '#555' }}>{fmt(b.amount)}</td>
+                  </tr>
+                ))}
+
+                <tr style={{ cursor: cashFlow.expenseRows.length ? 'pointer' : 'default' }}
+                  onClick={() => cashFlow.expenseRows.length && setShowExpBreak((v) => !v)}>
+                  <td style={{ textAlign: 'start' }}>
+                    {cashFlow.expenseRows.length > 0 && (showExpBreak ? '▾ ' : '▸ ')}
+                    {t('eventExpenses')}
+                    {cashFlow.expenseRows.length > 0 &&
+                      <small className="hint-inline"> ({cashFlow.expenseRows.length})</small>}
+                  </td>
                   <td>{fmt(cashFlow.spent)}</td></tr>
+                {showExpBreak && cashFlow.expenseRows.map((e) => (
+                  <tr key={e.id} style={{ background: '#FAFAFA' }}>
+                    <td style={{ textAlign: 'start', paddingInlineStart: 24, fontSize: 12.5, color: '#555' }}>
+                      ↳ {e.name || '—'} {e.expense_date ? <span className="hint-inline">— {e.expense_date}</span> : ''}</td>
+                    <td style={{ fontSize: 12.5, color: '#555' }}>{fmt(e.amount)}</td>
+                  </tr>
+                ))}
                 <tr style={{ fontWeight: 700 }}>
                   <td style={{ textAlign: 'start' }}>{t('totalOut')}</td>
                   <td style={{ color: '#A32D2D' }}>{fmt(cashFlow.actualOut)}</td></tr>

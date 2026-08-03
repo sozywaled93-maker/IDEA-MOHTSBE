@@ -233,6 +233,7 @@ export default function SuppliersTab() {
                 {subs.filter((x) => x.main_id === m.id).length === 0
                   ? <p className="hint-inline">{t('noSubsYet')}</p>
                   : (
+                    <div className="quote-scroll">
                     <table className="quote-table" style={{ width: '100%' }}>
                       <thead><tr><th style={{ textAlign: 'start' }}>{t('subItemName')}</th><th>{t('defaultUnit')}</th><th>{t('supplierCostCol')}</th><th>{t('supplierSellCol')}</th></tr></thead>
                       <tbody>
@@ -249,6 +250,7 @@ export default function SuppliersTab() {
                         ))}
                       </tbody>
                     </table>
+                    </div>
                   )}
               </div>
             ))}
