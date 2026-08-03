@@ -441,6 +441,22 @@ input[type="checkbox"]:checked::after { transform: translateX(16px); }
 .tg-badge.on { background:#E3F2FD; color:#0277BD; border:1px solid #81D4FA; }
 .tg-badge.off{ background:#F5F4F2; color:#9E9A95; border:1px solid var(--line, #E5E2DE); }
 
-/* أزرار أوامر الشغل */
+/* ===== كروت تبويبات صفحة الحسابات (زي داشبورد QuickBooks/Xero) ===== */
+.tab-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin-bottom: 16px; }
+.tab-card {
+  font-family: inherit; text-align: start; cursor: pointer;
+  background: var(--card); border: 1.5px solid var(--line); border-radius: var(--radius);
+  padding: 14px 16px; display: flex; flex-direction: column; gap: 4px;
+  transition: border-color .15s, background .15s, transform .1s;
+}
+.tab-card:hover { border-color: var(--brand); background: var(--brand-tint); }
+.tab-card:active { transform: scale(.98); }
+.tab-card.active { border-color: var(--brand); background: var(--brand-tint); box-shadow: 0 0 0 1.5px var(--brand) inset; }
+.tab-card-top { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.tab-card.active .tab-card-top { color: var(--brand-dark); }
+.tab-card-icon { font-size: 17px; }
+.tab-card-sub { font-size: 11px; color: var(--muted); }
+.tab-card-value { font-size: 18px; font-weight: 700; margin-top: 2px; }
+@media (max-width: 480px) { .tab-cards { grid-template-columns: 1fr 1fr; } }
 .entity-actions button.tg{ border-color:#81D4FA; color:#0277BD; }
 .entity-actions button.tg:disabled{ opacity:.45; cursor:not-allowed; }

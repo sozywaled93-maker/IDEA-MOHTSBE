@@ -395,39 +395,44 @@ export default function AccountsPage() {
     <div>
       <h1 className="page-title">💼 {t('accounts')}</h1>
 
-      {/* ملخص علوي */}
+      {/* كروت التنقل — كل كارت هو ملخص وباب دخول للتفاصيل */}
+      <div className="tab-cards">
+        <button className={`tab-card ${tab === 'payable' ? 'active' : ''}`} onClick={() => setTab('payable')}>
+          <span className="tab-card-top"><span className="tab-card-icon">📤</span> {t('weOwe')}</span>
+          <span className="tab-card-sub">{t('weOweSub')}</span>
+          <b className="tab-card-value" style={{ color: '#A32D2D' }}>
+            {fmt(payables.reduce((s, r) => s + Math.max(r.balance, 0), 0))}</b>
+        </button>
+        <button className={`tab-card ${tab === 'receivable' ? 'active' : ''}`} onClick={() => setTab('receivable')}>
+          <span className="tab-card-top"><span className="tab-card-icon">📥</span> {t('owedToUs')}</span>
+          <span className="tab-card-sub">{t('owedToUsSub')}</span>
+          <b className="tab-card-value" style={{ color: '#0F6E56' }}>
+            {fmt(receivables.reduce((s, r) => s + Math.max(r.balance, 0), 0))}</b>
+        </button>
+        <button className={`tab-card ${tab === 'paidOut' ? 'active' : ''}`} onClick={() => setTab('paidOut')}>
+          <span className="tab-card-top"><span className="tab-card-icon">💸</span> {t('paidToSuppliers')}</span>
+          <span className="tab-card-sub">{t('cashOut')}</span>
+          <b className="tab-card-value" style={{ color: '#A32D2D' }}>
+            {fmt(paidOutList.reduce((s, p) => s + p.amount, 0))}</b>
+        </button>
+        <button className={`tab-card ${tab === 'collected' ? 'active' : ''}`} onClick={() => setTab('collected')}>
+          <span className="tab-card-top"><span className="tab-card-icon">💰</span> {t('collectedFromClients')}</span>
+          <span className="tab-card-sub">{t('cashIn')}</span>
+          <b className="tab-card-value" style={{ color: '#0F6E56' }}>
+            {fmt(collectedList.reduce((s, p) => s + p.amount, 0))}</b>
+        </button>
+        <button className={`tab-card ${tab === 'free' ? 'active' : ''}`} onClick={() => setTab('free')}>
+          <span className="tab-card-top"><span className="tab-card-icon">🧾</span> {t('freeSupplier')}</span>
+          <span className="tab-card-sub">&nbsp;</span>
+        </button>
+      </div>
+
+      {/* ملخص صافي المركز */}
       <div className="kpi-row" style={{ marginBottom: 14 }}>
-        <div className="kpi">
-          <span>📤 {t('totalPayable')}</span>
-          <b style={{ color: '#A32D2D' }}>{fmt(payables.reduce((s, r) => s + Math.max(r.balance, 0), 0))}</b>
-        </div>
-        <div className="kpi">
-          <span>📥 {t('totalReceivable')}</span>
-          <b style={{ color: '#0F6E56' }}>{fmt(receivables.reduce((s, r) => s + Math.max(r.balance, 0), 0))}</b>
-        </div>
         <div className="kpi big">
           <span>📊 {t('netPosition')}</span>
           <b style={{ color: netPosition >= 0 ? '#0F6E56' : '#A32D2D' }}>{fmt(netPosition)}</b>
         </div>
-      </div>
-
-      {/* التابات */}
-      <div className="seg" style={{ marginBottom: 12 }}>
-        <button className={tab === 'payable' ? 'active' : ''} onClick={() => setTab('payable')}>
-          📤 {t('weOwe')}
-        </button>
-        <button className={tab === 'receivable' ? 'active' : ''} onClick={() => setTab('receivable')}>
-          📥 {t('owedToUs')}
-        </button>
-        <button className={tab === 'free' ? 'active' : ''} onClick={() => setTab('free')}>
-          🧾 {t('freeSupplier')}
-        </button>
-        <button className={tab === 'paidOut' ? 'active' : ''} onClick={() => setTab('paidOut')}>
-          💸 {t('paidToSuppliers')}
-        </button>
-        <button className={tab === 'collected' ? 'active' : ''} onClick={() => setTab('collected')}>
-          💰 {t('collectedFromClients')}
-        </button>
       </div>
 
       {tab === 'free' && <FreeLedger />}
