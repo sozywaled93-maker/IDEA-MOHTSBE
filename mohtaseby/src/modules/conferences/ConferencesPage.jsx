@@ -140,7 +140,19 @@ export default function ConferencesPage() {
         </Modal>
       )}
       {del && <ConfirmDelete onCancel={() => setDel(null)}
-        onConfirm={async () => { await deleteRow('conferences', del); setDel(null); load() }} />}
+        message={t('deleteConfWarn')}
+        onConfirm={async () => {
+          // حذف كل بيانات الموردين (فواتير/دفعات/تسويات) المربوطة بالمؤتمر ده — لأن المؤتمر هو مصدر الحقيقة
+          const [inv, pay] = await Promise.all([
+            listRows('supplier_invoices'), listRows('supplier_payments'),
+          ])
+          await Promise.all([
+            ...inv.filter((x) => x.conference_id === del).map((x) => deleteRow('supplier_invoices', x.id)),
+            ...pay.filter((x) => x.conference_id === del).map((x) => deleteRow('supplier_payments', x.id)),
+          ])
+          await deleteRow('conferences', del)
+          setDel(null); load()
+        }} />}
     </div>
   )
 }

@@ -29,10 +29,11 @@ export function Modal({ title, children, onClose, wide, dirty, onSaveAndClose })
   )
 }
 
-export function ConfirmDelete({ onConfirm, onCancel }) {
+export function ConfirmDelete({ onConfirm, onCancel, message }) {
   const { t } = useLang()
   return (
     <Modal title={t('confirmDelete')} onClose={onCancel}>
+      {message && <p className="hint-inline" style={{ color: '#A32D2D', marginBottom: 10 }}>⚠ {message}</p>}
       <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 8 }}>
         <button className="add-btn" style={{ borderColor: '#ccc', color: '#666' }} onClick={onCancel}>{t('cancel')}</button>
         <button className="save-btn" style={{ background: '#A32D2D' }} onClick={onConfirm}>{t('delete')}</button>

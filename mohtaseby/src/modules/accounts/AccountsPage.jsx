@@ -477,6 +477,12 @@ export default function AccountsPage() {
 
       {tab === 'free' && <FreeLedger />}
 
+      {tab === 'paidOut' && paidDrill.entity === null && (
+        <p className="hint-inline" style={{ marginBottom: 10, display: 'block' }}>
+          ℹ️ {t('paidOutLinkHint')}
+        </p>
+      )}
+
       {tab === 'paidOut' && (() => {
         const { entity, conf } = paidDrill
         // المستوى 1: قائمة الموردين
