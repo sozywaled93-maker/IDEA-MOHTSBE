@@ -36,6 +36,7 @@ export default function QuotesPage() {
   const [exp, setExp] = useState(null)          // عرض للتصدير
   const [workOrder, setWorkOrder] = useState(false)
   const [status, setStatus] = useState('idle')
+  const [declinedConfLink, setDeclinedConfLink] = useState(false)
   const [preambles, setPreambles] = useState([])
   const [conferences, setConferences] = useState([])
   const [mains, setMains] = useState([])
@@ -228,7 +229,23 @@ export default function QuotesPage() {
         setConferences(await listRows('conferences'))
       }
     }
-    setQ((p) => ({ ...p, id: saved.id }))
+    // لو عرض السعر مش مربوط بمؤتمر أصلاً — اسأل المستخدم يضيفه للمؤتمرات
+    // (المؤتمر هو مصدر الحقيقة اللي كروت حساب المورد بترتبط بيه وما بتتمسحش إلا بمسحه)
+    if (!q.conference_id && !declinedConfLink) {
+      if (confirm(t('addToConferencesQ'))) {
+        const conf = await insertRow('conferences', {
+          name: q.conference_name, date_from: q.date_from || null, date_to: q.date_to || null,
+          location: q.location || '', governorate: '', venue_id: null, hall_name: '', notes: '', agenda_url: null,
+        })
+        await updateRow('quotes', saved.id, { conference_id: conf.id })
+        saved = { ...saved, conference_id: conf.id }
+        setConferences(await listRows('conferences'))
+      } else {
+        setDeclinedConfLink(true)
+      }
+    }
+
+    setQ((p) => ({ ...p, id: saved.id, conference_id: saved.conference_id ?? p.conference_id }))
     setQuotes(await listRows('quotes'))
     setStatus('saved'); setTimeout(() => setStatus('idle'), 2000)
   }
@@ -237,6 +254,7 @@ export default function QuotesPage() {
     const d = row.data ? JSON.parse(row.data) : { halls: [], items: [] }
     const pays = typeof row.payments === 'string' ? JSON.parse(row.payments || '[]') : (row.payments || [])
     setQ({ ...row, payments: pays, halls: d.halls || [], items: d.items || [] })
+    setDeclinedConfLink(false)
   }
 
   const convertToInvoice = async (row) => {
@@ -251,7 +269,7 @@ export default function QuotesPage() {
     <div>
       <h1 className="page-title">{t('quotes')}</h1>
       <div className="toolbar">
-        <button className="save-btn" onClick={() => setQ(newQuote())}>+ {t('newQuote')}</button>
+        <button className="save-btn" onClick={() => { setQ(newQuote()); setDeclinedConfLink(false) }}>+ {t('newQuote')}</button>
       </div>
       {quotes.length === 0 ? <EmptyState /> : (
         <div className="cards-grid">
