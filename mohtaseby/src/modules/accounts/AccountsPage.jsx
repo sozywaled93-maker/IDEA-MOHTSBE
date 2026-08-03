@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useLang } from '../../lib/i18n.jsx'
-import { listRows, insertRow, updateRow, uploadDoc, openFile, downloadFile } from '../../lib/db.js'
+import { listRows, insertRow, updateRow, deleteRow, uploadDoc, openFile, downloadFile } from '../../lib/db.js'
 import { fmt } from '../../lib/tafqeet.js'
 import { Modal, EmptyState } from '../../components/ui.jsx'
 import { printHtml } from '../exports/exportQuote.js'
@@ -212,6 +212,39 @@ export default function AccountsPage() {
   }), [clients, quotes])
 
   const rows = tab === 'payable' ? payables : receivables
+
+  /* ---------- تبويب: كل حركات الدفع للموردين في مكان واحد ---------- */
+  const paidOutList = useMemo(() => {
+    const supName = (id) => suppliers.find((s) => s.id === id)?.supplier_name
+      || suppliers.find((s) => s.id === id)?.company_name || '—'
+    const direct = payments.map((p) => ({
+      source: 'direct', id: p.id, date: p.pay_date, amount: +p.amount || 0,
+      method: p.method, note: p.note, receipt_url: p.receipt_url,
+      supplier_id: p.supplier_id, supplier_name: supName(p.supplier_id),
+      conference: conferences.find((c) => c.id === p.conference_id)?.name || '',
+    }))
+    const fromInv = invoices.flatMap((inv) =>
+      (inv.payments || []).filter((p) => +p.amount).map((p, i) => ({
+        source: 'invoice', invId: inv.id, idx: i,
+        date: p.date || p.pay_date, amount: +p.amount || 0, method: p.method, note: p.note,
+        supplier_id: inv.supplier_id, supplier_name: supName(inv.supplier_id),
+        conference: conferences.find((c) => c.id === inv.conference_id)?.name || inv.free_conference || '',
+      })))
+    return [...direct, ...fromInv].sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))
+  }, [payments, invoices, suppliers, conferences])
+
+  /* ---------- تبويب: كل حركات التحصيل من العملاء في مكان واحد ---------- */
+  const collectedList = useMemo(() => {
+    const clName = (id) => clients.find((c) => c.id === id)?.company_name || '—'
+    return quotes.filter((q) => q.doc_type === 'invoice').flatMap((q) =>
+      parsePays(q).map((p, i) => ({
+        quote: q, index: i, date: p.date, amount: +p.amount || 0, method: p.method,
+        note: p.note, receipt_url: p.receipt_url, from_name: p.from_name,
+        client_name: clName(q.client_id), conference: q.conference_name || '—',
+      })))
+      .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))
+  }, [quotes, clients])
+
   const shown = rows.filter((r) => {
     if (filter === 'open') return r.balance > 0.01
     if (filter === 'overdue') return r.balance > 0.01 && (r.age ?? 0) > 30
@@ -348,11 +381,13 @@ export default function AccountsPage() {
 
   const savePayment = async () => {
     if (!+payForm.amount) return
-    await insertRow('supplier_payments', {
-      supplier_id: payForm.supplier_id, amount: +payForm.amount,
-      method: payForm.method || 'cash', pay_date: payForm.pay_date,
-      note: payForm.note || '', conference_id: null,
-    })
+    const body = {
+      amount: +payForm.amount, method: payForm.method || 'cash',
+      pay_date: payForm.pay_date, note: payForm.note || '',
+      receipt_url: payForm.receipt_url || '',
+    }
+    if (payForm.id) await updateRow('supplier_payments', payForm.id, body)
+    else await insertRow('supplier_payments', { ...body, supplier_id: payForm.supplier_id, conference_id: null })
     setPayForm(null); setDetail(null); load()
   }
 
@@ -387,11 +422,109 @@ export default function AccountsPage() {
         <button className={tab === 'free' ? 'active' : ''} onClick={() => setTab('free')}>
           🧾 {t('freeSupplier')}
         </button>
+        <button className={tab === 'paidOut' ? 'active' : ''} onClick={() => setTab('paidOut')}>
+          💸 {t('paidToSuppliers')}
+        </button>
+        <button className={tab === 'collected' ? 'active' : ''} onClick={() => setTab('collected')}>
+          💰 {t('collectedFromClients')}
+        </button>
       </div>
 
       {tab === 'free' && <FreeLedger />}
 
-      {tab !== 'free' && <>
+      {tab === 'paidOut' && (
+        <div style={{ overflowX: 'auto' }}><table className="quote-table">
+          <thead><tr>
+            <th>{t('date')}</th><th>{t('supplier')}</th><th>{t('conferences')}</th>
+            <th>{t('amount')}</th><th>{t('method')}</th><th>{t('notes')}</th><th></th>
+          </tr></thead>
+          <tbody>
+            {paidOutList.map((p, i) => (
+              <tr key={p.source + '-' + (p.id || p.invId + '-' + p.idx)}>
+                <td>{p.date || '—'}</td>
+                <td className="wrap"><b>{p.supplier_name}</b></td>
+                <td className="wrap">{p.conference || '—'}</td>
+                <td><b style={{ color: '#A32D2D' }}>{fmt(p.amount)}</b></td>
+                <td>{t(p.method || 'cash') !== (p.method || 'cash') ? t(p.method || 'cash') : p.method}</td>
+                <td className="wrap">{p.note || '—'}</td>
+                <td style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                  {p.receipt_url && (
+                    <>
+                      <button className="mini-btn" onClick={() => openFile(p.receipt_url)}>👁 {t('view')}</button>
+                      <button className="mini-btn" onClick={() => downloadFile(p.receipt_url)}>💾 {t('download')}</button>
+                    </>
+                  )}
+                  {p.source === 'direct' ? (
+                    <>
+                      <button className="mini-btn" onClick={() => setPayForm({
+                        id: p.id, supplier_id: p.supplier_id, name: p.supplier_name,
+                        amount: p.amount, pay_date: p.date, method: p.method || 'cash',
+                        note: p.note || '', receipt_url: p.receipt_url || '',
+                      })}>✏️ {t('edit')}</button>
+                      <button className="mini-btn danger" onClick={async () => {
+                        if (!confirm(t('confirmDelete'))) return
+                        await deleteRow('supplier_payments', p.id); load()
+                      }}>✕</button>
+                    </>
+                  ) : (
+                    <button className="mini-btn" onClick={() => {
+                      const sup = suppliers.find((s) => s.id === p.supplier_id)
+                      if (sup) setDetail({ kind: 'payable', row: { supplier: sup } })
+                    }}>{t('details')}</button>
+                  )}
+                </td>
+              </tr>
+            ))}
+            {!paidOutList.length && (
+              <tr><td colSpan={7}><EmptyState /></td></tr>
+            )}
+          </tbody>
+        </table></div>
+      )}
+
+      {tab === 'collected' && (
+        <div style={{ overflowX: 'auto' }}><table className="quote-table">
+          <thead><tr>
+            <th>{t('date')}</th><th>{t('client')}</th><th>{t('conferences')}</th>
+            <th>{t('amount')}</th><th>{t('method')}</th><th>{t('notes')}</th><th></th>
+          </tr></thead>
+          <tbody>
+            {collectedList.map((p, i) => (
+              <tr key={p.quote.id + '-' + p.index}>
+                <td>{p.date || '—'}</td>
+                <td className="wrap"><b>{p.client_name}</b></td>
+                <td className="wrap">{p.conference}</td>
+                <td><b style={{ color: '#0F6E56' }}>{fmt(p.amount)}</b></td>
+                <td>{t(p.method || 'cash') !== (p.method || 'cash') ? t(p.method || 'cash') : p.method}</td>
+                <td className="wrap">{p.note || '—'}</td>
+                <td style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                  {p.receipt_url && (
+                    <>
+                      <button className="mini-btn" onClick={() => openFile(p.receipt_url)}>👁 {t('view')}</button>
+                      <button className="mini-btn" onClick={() => downloadFile(p.receipt_url)}>💾 {t('download')}</button>
+                    </>
+                  )}
+                  <button className="mini-btn" onClick={() => setClientPay({
+                    quote: p.quote, index: p.index,
+                    data: { amount: p.amount, date: p.date, method: p.method || 'cash',
+                      note: p.note || '', from_name: p.from_name || '', receipt_url: p.receipt_url || '' },
+                  })}>✏️ {t('edit')}</button>
+                  <button className="mini-btn danger" onClick={async () => {
+                    if (!confirm(t('confirmDelete'))) return
+                    const pays = parsePays(p.quote)
+                    await saveQuotePayments(p.quote, pays.filter((_, j) => j !== p.index))
+                  }}>✕</button>
+                </td>
+              </tr>
+            ))}
+            {!collectedList.length && (
+              <tr><td colSpan={7}><EmptyState /></td></tr>
+            )}
+          </tbody>
+        </table></div>
+      )}
+
+      {tab !== 'free' && tab !== 'paidOut' && tab !== 'collected' && <>
       <div className="toolbar" style={{ marginBottom: 10 }}>
         <div className="seg">
           <button className={filter === 'open' ? 'active' : ''} onClick={() => setFilter('open')}>{t('openOnly')}</button>
@@ -768,9 +901,9 @@ export default function AccountsPage() {
         </Modal>
       )}
 
-      {/* تسجيل دفعة لمورد */}
+      {/* تسجيل/تعديل دفعة لمورد */}
       {payForm && (
-        <Modal title={`💵 ${t('addPayment')} — ${payForm.name}`} onClose={() => setPayForm(null)}>
+        <Modal title={`💵 ${payForm.id ? t('editPayment') : t('addPayment')} — ${payForm.name}`} onClose={() => setPayForm(null)}>
           <div className="field"><label>{t('amount')}</label>
             <input type="number" value={payForm.amount}
               onChange={(e) => setPayForm((p) => ({ ...p, amount: e.target.value }))} /></div>
@@ -787,6 +920,25 @@ export default function AccountsPage() {
           <div className="field"><label>{t('notes')}</label>
             <input value={payForm.note}
               onChange={(e) => setPayForm((p) => ({ ...p, note: e.target.value }))} /></div>
+          <div className="field"><label>{t('receiptImage')}</label>
+            <input type="file" accept="image/*,application/pdf" onChange={async (e) => {
+              const f = e.target.files?.[0]; if (!f) return
+              try {
+                setPayForm((p) => ({ ...p, __up: true }))
+                const url = await uploadDoc('receipt-docs', f)
+                setPayForm((p) => ({ ...p, receipt_url: url, __up: false }))
+              } catch (err) { setPayForm((p) => ({ ...p, __up: false })); alert(t('uploadFailed') + ' ' + (err?.message || '')) }
+            }} />
+            {payForm.__up && <span className="hint-inline">⏳ {t('uploading')}</span>}
+            {payForm.receipt_url && !payForm.__up && (
+              <span className="hint-inline">✅ {t('receiptAttached')}
+                <button type="button" className="mini-btn" style={{ marginInlineStart: 6 }}
+                  onClick={() => openFile(payForm.receipt_url)}>👁 {t('view')}</button>
+                <button type="button" className="mini-btn" style={{ marginInlineStart: 4 }}
+                  onClick={() => setPayForm((p) => ({ ...p, receipt_url: '' }))}>✕</button>
+              </span>
+            )}
+          </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
             <button className="save-btn" onClick={savePayment}>{t('save')}</button>
           </div>
