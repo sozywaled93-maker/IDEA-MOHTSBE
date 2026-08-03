@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useLang } from '../../lib/i18n.jsx'
 import { listRows } from '../../lib/db.js'
 import { fmt } from '../../lib/tafqeet.js'
+import { goto } from '../../lib/nav.js'
 
 export default function DashboardPage() {
   const { t } = useLang()
@@ -53,8 +54,8 @@ export default function DashboardPage() {
 
     return {
       monthProfit: inc - exp, monthIncome: inc, monthExpense: exp,
-      topClient, topClientTotal: byClient[topClientId] || 0,
-      topSupplier, topSupplierTotal: bySupplier[topSupId] || 0,
+      topClient, topClientId, topClientTotal: byClient[topClientId] || 0,
+      topSupplier, topSupId, topSupplierTotal: bySupplier[topSupId] || 0,
       invoiceCount: quotes.filter((q) => q.doc_type === 'invoice').length,
       proposalCount: quotes.filter((q) => q.doc_type !== 'invoice').length,
     }
@@ -66,27 +67,43 @@ export default function DashboardPage() {
       <p className="page-sub">{now.toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' })}</p>
 
       <div className="kpi-row">
-        <div className="kpi big">
+        <button className="kpi big" style={{ cursor: 'pointer', textAlign: 'start' }}
+          onClick={() => goto('treasury', { tab: 'overview' })}>
           <span>{t('monthProfit')}</span>
           <b style={{ color: stats.monthProfit >= 0 ? '#0F6E56' : '#A32D2D' }}>{fmt(stats.monthProfit)} EGP</b>
-        </div>
-        <div className="kpi"><span>{t('monthIncome')}</span><b>{fmt(stats.monthIncome)}</b></div>
-        <div className="kpi"><span>{t('monthExpenses')}</span><b>{fmt(stats.monthExpense)}</b></div>
+          <small className="hint-inline">{t('clickForSource')}</small>
+        </button>
+        <button className="kpi" style={{ cursor: 'pointer', textAlign: 'start' }}
+          onClick={() => goto('treasury', { tab: 'income' })}>
+          <span>{t('monthIncome')}</span><b>{fmt(stats.monthIncome)}</b>
+        </button>
+        <button className="kpi" style={{ cursor: 'pointer', textAlign: 'start' }}
+          onClick={() => goto('treasury', { tab: 'expenses' })}>
+          <span>{t('monthExpenses')}</span><b>{fmt(stats.monthExpense)}</b>
+        </button>
       </div>
 
       <div className="kpi-row">
-        <div className="kpi">
+        <button className="kpi" style={{ cursor: stats.topClient ? 'pointer' : 'default', textAlign: 'start' }}
+          onClick={() => stats.topClient && goto('quotes', { clientId: stats.topClientId })}>
           <span>{t('topClient')}</span>
           <b>{stats.topClient?.company_name || '—'}</b>
-          {stats.topClient && <small>{fmt(stats.topClientTotal)} EGP</small>}
-        </div>
-        <div className="kpi">
+          {stats.topClient && <small>{fmt(stats.topClientTotal)} EGP — {t('clickForInvoices')}</small>}
+        </button>
+        <button className="kpi" style={{ cursor: stats.topSupplier ? 'pointer' : 'default', textAlign: 'start' }}
+          onClick={() => stats.topSupplier && goto('accounts', { tab: 'paidOut', supplierId: stats.topSupId })}>
           <span>{t('topSupplier')}</span>
           <b>{stats.topSupplier?.supplier_name || '—'}</b>
-          {stats.topSupplier && <small>{fmt(stats.topSupplierTotal)} EGP</small>}
-        </div>
-        <div className="kpi"><span>{t('invoices')}</span><b>{stats.invoiceCount}</b></div>
-        <div className="kpi"><span>{t('proposals')}</span><b>{stats.proposalCount}</b></div>
+          {stats.topSupplier && <small>{fmt(stats.topSupplierTotal)} EGP — {t('clickForInvoices')}</small>}
+        </button>
+        <button className="kpi" style={{ cursor: 'pointer', textAlign: 'start' }}
+          onClick={() => goto('quotes', {})}>
+          <span>{t('invoices')}</span><b>{stats.invoiceCount}</b>
+        </button>
+        <button className="kpi" style={{ cursor: 'pointer', textAlign: 'start' }}
+          onClick={() => goto('quotes', {})}>
+          <span>{t('proposals')}</span><b>{stats.proposalCount}</b>
+        </button>
       </div>
     </div>
   )

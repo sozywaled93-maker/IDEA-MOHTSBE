@@ -7,6 +7,7 @@ import { printHtml } from '../exports/exportQuote.js'
 import { loadSettings } from '../../lib/supabase.js'
 import SupplierLedger from './SupplierLedger.jsx'
 import FreeLedger from './FreeLedger.jsx'
+import { consumeNavParams } from '../../lib/nav.js'
 
 /* ---------- حسابات مطابقة لكشف حساب المورد حرفياً ---------- */
 const invTotal = (inv) => (inv.items || []).reduce((s, i) => s + (+i.qty || 0) * (+i.price || 0) * (+i.days || 1), 0)
@@ -44,7 +45,9 @@ const ageOf = (dateStr) => {
 
 export default function AccountsPage() {
   const { t } = useLang()
-  const [tab, setTab] = useState('payable')     // payable | receivable
+  const [navParams] = useState(() => consumeNavParams() || {})
+  const [tab, setTab] = useState(navParams.tab || 'payable')     // payable | receivable
+  const [pendingSupplierId, setPendingSupplierId] = useState(navParams.supplierId || null)
   const [filter, setFilter] = useState('open')  // all | open | overdue
   const [quotes, setQuotes] = useState([])
   const [suppliers, setSuppliers] = useState([])
@@ -221,6 +224,7 @@ export default function AccountsPage() {
       source: 'direct', id: p.id, date: p.pay_date, amount: +p.amount || 0,
       method: p.method, note: p.note, receipt_url: p.receipt_url,
       supplier_id: p.supplier_id, supplier_name: supName(p.supplier_id),
+      conference_id: p.conference_id || null,
       conference: conferences.find((c) => c.id === p.conference_id)?.name || '',
     }))
     const fromInv = invoices.flatMap((inv) =>
@@ -280,6 +284,15 @@ export default function AccountsPage() {
   // مسار التنقل جوه الكارت: null = قائمة الموردين/العملاء، بعدين المؤتمرات، بعدين التفاصيل
   const [paidDrill, setPaidDrill] = useState({ entity: null, conf: null })
   const [collectedDrill, setCollectedDrill] = useState({ entity: null, conf: null })
+
+  // لو جينا من كارت "أكتر مورد" في الداشبورد — افتح كارت المورد ده مباشرة
+  useEffect(() => {
+    if (pendingSupplierId && paidBySupplier.length) {
+      const s = paidBySupplier.find((x) => x.id === pendingSupplierId)
+      if (s) setPaidDrill({ entity: s, conf: null })
+      setPendingSupplierId(null)
+    }
+  }, [pendingSupplierId, paidBySupplier])
 
   const openTab = (name) => {
     setTab(name); setPaidDrill({ entity: null, conf: null }); setCollectedDrill({ entity: null, conf: null })
@@ -425,9 +438,10 @@ export default function AccountsPage() {
       amount: +payForm.amount, method: payForm.method || 'cash',
       pay_date: payForm.pay_date, note: payForm.note || '',
       receipt_url: payForm.receipt_url || '',
+      conference_id: payForm.conference_id || null,
     }
     if (payForm.id) await updateRow('supplier_payments', payForm.id, body)
-    else await insertRow('supplier_payments', { ...body, supplier_id: payForm.supplier_id, conference_id: null })
+    else await insertRow('supplier_payments', { ...body, supplier_id: payForm.supplier_id })
     setPayForm(null); setDetail(null); load()
   }
 
@@ -552,6 +566,7 @@ export default function AccountsPage() {
                             id: p.id, supplier_id: p.supplier_id, name: p.supplier_name,
                             amount: p.amount, pay_date: p.date, method: p.method || 'cash',
                             note: p.note || '', receipt_url: p.receipt_url || '',
+                            conference_id: p.conference_id || '',
                           })}>✏️ {t('edit')}</button>
                           <button className="mini-btn danger" onClick={async () => {
                             if (!confirm(t('confirmDelete'))) return
@@ -1041,6 +1056,13 @@ export default function AccountsPage() {
           <div className="field"><label>{t('date')}</label>
             <input type="date" value={payForm.pay_date}
               onChange={(e) => setPayForm((p) => ({ ...p, pay_date: e.target.value }))} /></div>
+          <div className="field"><label>{t('conferences')}</label>
+            <select value={payForm.conference_id || ''} onChange={(e) => setPayForm((p) => ({ ...p, conference_id: e.target.value }))}>
+              <option value="">— {t('freeSupplier')} —</option>
+              {conferences.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+            <small className="hint-inline">{t('paidOutLinkHint')}</small>
+          </div>
           <div className="field"><label>{t('method')}</label>
             <select value={payForm.method} onChange={(e) => setPayForm((p) => ({ ...p, method: e.target.value }))}>
               <option value="cash">{t('cashWord')}</option>

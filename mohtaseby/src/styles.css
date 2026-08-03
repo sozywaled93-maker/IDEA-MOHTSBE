@@ -273,6 +273,9 @@ button.entity-card { display: block; }
 
 .kpi-row { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px,1fr)); gap:12px; margin-bottom:18px; }
 .kpi { background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:16px 18px; display:flex; flex-direction:column; gap:6px; }
+button.kpi { font-family: inherit; width: 100%; transition: border-color .15s, transform .1s; }
+button.kpi:hover { border-color: var(--brand); }
+button.kpi:active { transform: scale(.98); }
 .kpi span { font-size:12.5px; color:var(--muted); }
 .kpi b { font-size:20px; }
 .kpi small { color:var(--muted); }

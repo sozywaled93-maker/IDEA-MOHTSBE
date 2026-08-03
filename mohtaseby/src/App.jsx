@@ -97,6 +97,12 @@ function Shell() {
   const [page, setPage] = useState('dashboard')
   const [reminders, setReminders] = useState([])
 
+  useEffect(() => {
+    const h = (e) => setPage(e.detail.page)
+    window.addEventListener('app-goto', h)
+    return () => window.removeEventListener('app-goto', h)
+  }, [])
+
   const [confAlerts, setConfAlerts] = useState([])
   const [tickerOn, setTickerOn] = useState(true)
 

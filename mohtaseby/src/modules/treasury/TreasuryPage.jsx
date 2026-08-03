@@ -6,11 +6,12 @@ import { useLang } from '../../lib/i18n.jsx'
 import { listRows, insertRow, updateRow, deleteRow } from '../../lib/db.js'
 import { fmt } from '../../lib/tafqeet.js'
 import { EmptyState, Modal } from '../../components/ui.jsx'
+import { consumeNavParams } from '../../lib/nav.js'
 import * as XLSX from 'xlsx'
 
 export default function TreasuryPage() {
   const { t } = useLang()
-  const [tab, setTab] = useState('overview')
+  const [tab, setTab] = useState(() => consumeNavParams()?.tab || 'overview')
   const [expenses, setExpenses] = useState([])
   const [incomes, setIncomes] = useState([])
   const [quotes, setQuotes] = useState([])

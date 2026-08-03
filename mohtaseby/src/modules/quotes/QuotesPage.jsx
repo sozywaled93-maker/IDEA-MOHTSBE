@@ -4,6 +4,7 @@ import { listRows, insertRow, updateRow, deleteRow, uploadDoc, openFile } from '
 import { fmt } from '../../lib/tafqeet.js'
 import { Modal, ConfirmDelete, EmptyState } from '../../components/ui.jsx'
 import { exportQuote } from '../exports/exportQuote.js'
+import { consumeNavParams } from '../../lib/nav.js'
 
 // بنية العرض داخل الواجهة:
 // quote { header..., is_taxable, halls: [{key, name}], items: [{key, equipment_id, item_name, unit, supplier_id, cost_price, cells: {hallKey: {units, price, days, note}}}] }
@@ -37,6 +38,7 @@ export default function QuotesPage() {
   const [workOrder, setWorkOrder] = useState(false)
   const [status, setStatus] = useState('idle')
   const [declinedConfLink, setDeclinedConfLink] = useState(false)
+  const [filterClientId, setFilterClientId] = useState(() => consumeNavParams()?.clientId || null)
   const [preambles, setPreambles] = useState([])
   const [conferences, setConferences] = useState([])
   const [mains, setMains] = useState([])
@@ -271,9 +273,17 @@ export default function QuotesPage() {
       <div className="toolbar">
         <button className="save-btn" onClick={() => { setQ(newQuote()); setDeclinedConfLink(false) }}>+ {t('newQuote')}</button>
       </div>
-      {quotes.length === 0 ? <EmptyState /> : (
+      {filterClientId && (
+        <p className="hint-inline" style={{ marginBottom: 10 }}>
+          🔎 {t('filteredBy')}: <b>{clients.find((c) => c.id === filterClientId)?.company_name || '—'}</b>
+          <button className="mini-btn" style={{ marginInlineStart: 8 }} onClick={() => setFilterClientId(null)}>✕ {t('clearFilter')}</button>
+        </p>
+      )}
+      {(() => {
+        const visQuotes = filterClientId ? quotes.filter((r) => r.client_id === filterClientId) : quotes
+        return visQuotes.length === 0 ? <EmptyState /> : (
         <div className="cards-grid">
-          {quotes.map((r) => (
+          {visQuotes.map((r) => (
             <div className="entity-card" key={r.id}>
               <div className="entity-head">
                 <b>{r.conference_name}</b>
@@ -300,7 +310,8 @@ export default function QuotesPage() {
             </div>
           ))}
         </div>
-      )}
+        )
+      })()}
       {del && <ConfirmDelete onCancel={() => setDel(null)}
         onConfirm={async () => { await deleteRow('quotes', del); setDel(null); setQuotes(await listRows('quotes')) }} />}
       {exp && <ExportModal quote={exp} clients={clients} settings={settings} suppliers={suppliers} onClose={() => setExp(null)} />}
