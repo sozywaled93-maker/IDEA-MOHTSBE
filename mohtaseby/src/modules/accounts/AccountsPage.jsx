@@ -240,10 +240,50 @@ export default function AccountsPage() {
       parsePays(q).map((p, i) => ({
         quote: q, index: i, date: p.date, amount: +p.amount || 0, method: p.method,
         note: p.note, receipt_url: p.receipt_url, from_name: p.from_name,
-        client_name: clName(q.client_id), conference: q.conference_name || '—',
+        client_id: q.client_id, client_name: clName(q.client_id), conference: q.conference_name || '—',
       })))
       .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))
   }, [quotes, clients])
+
+  /* ---------- تجميع هرمي: مورد → مؤتمراته (لكارت "مدفوع للموردين") ---------- */
+  const paidBySupplier = useMemo(() => {
+    const m = new Map()
+    for (const p of paidOutList) {
+      if (!p.supplier_id) continue
+      if (!m.has(p.supplier_id)) m.set(p.supplier_id, { id: p.supplier_id, name: p.supplier_name, total: 0, count: 0, byConf: new Map() })
+      const s = m.get(p.supplier_id)
+      s.total += p.amount; s.count++
+      const confKey = p.conference || t('freeSupplier')
+      if (!s.byConf.has(confKey)) s.byConf.set(confKey, { name: confKey, total: 0, count: 0, items: [] })
+      const c = s.byConf.get(confKey)
+      c.total += p.amount; c.count++; c.items.push(p)
+    }
+    return [...m.values()].sort((a, b) => b.total - a.total)
+  }, [paidOutList, t])
+
+  /* ---------- تجميع هرمي: عميل → مؤتمراته (لكارت "محصّل من العملاء") ---------- */
+  const collectedByClient = useMemo(() => {
+    const m = new Map()
+    for (const p of collectedList) {
+      const key = p.client_id || p.client_name
+      if (!m.has(key)) m.set(key, { id: p.client_id, name: p.client_name, total: 0, count: 0, byConf: new Map() })
+      const s = m.get(key)
+      s.total += p.amount; s.count++
+      const confKey = p.conference || '—'
+      if (!s.byConf.has(confKey)) s.byConf.set(confKey, { name: confKey, total: 0, count: 0, items: [] })
+      const c = s.byConf.get(confKey)
+      c.total += p.amount; c.count++; c.items.push(p)
+    }
+    return [...m.values()].sort((a, b) => b.total - a.total)
+  }, [collectedList])
+
+  // مسار التنقل جوه الكارت: null = قائمة الموردين/العملاء، بعدين المؤتمرات، بعدين التفاصيل
+  const [paidDrill, setPaidDrill] = useState({ entity: null, conf: null })
+  const [collectedDrill, setCollectedDrill] = useState({ entity: null, conf: null })
+
+  const openTab = (name) => {
+    setTab(name); setPaidDrill({ entity: null, conf: null }); setCollectedDrill({ entity: null, conf: null })
+  }
 
   const shown = rows.filter((r) => {
     if (filter === 'open') return r.balance > 0.01
@@ -397,31 +437,31 @@ export default function AccountsPage() {
 
       {/* كروت التنقل — كل كارت هو ملخص وباب دخول للتفاصيل */}
       <div className="tab-cards">
-        <button className={`tab-card ${tab === 'payable' ? 'active' : ''}`} onClick={() => setTab('payable')}>
+        <button className={`tab-card ${tab === 'payable' ? 'active' : ''}`} onClick={() => openTab('payable')}>
           <span className="tab-card-top"><span className="tab-card-icon">📤</span> {t('weOwe')}</span>
           <span className="tab-card-sub">{t('weOweSub')}</span>
           <b className="tab-card-value" style={{ color: '#A32D2D' }}>
             {fmt(payables.reduce((s, r) => s + Math.max(r.balance, 0), 0))}</b>
         </button>
-        <button className={`tab-card ${tab === 'receivable' ? 'active' : ''}`} onClick={() => setTab('receivable')}>
+        <button className={`tab-card ${tab === 'receivable' ? 'active' : ''}`} onClick={() => openTab('receivable')}>
           <span className="tab-card-top"><span className="tab-card-icon">📥</span> {t('owedToUs')}</span>
           <span className="tab-card-sub">{t('owedToUsSub')}</span>
           <b className="tab-card-value" style={{ color: '#0F6E56' }}>
             {fmt(receivables.reduce((s, r) => s + Math.max(r.balance, 0), 0))}</b>
         </button>
-        <button className={`tab-card ${tab === 'paidOut' ? 'active' : ''}`} onClick={() => setTab('paidOut')}>
+        <button className={`tab-card ${tab === 'paidOut' ? 'active' : ''}`} onClick={() => openTab('paidOut')}>
           <span className="tab-card-top"><span className="tab-card-icon">💸</span> {t('paidToSuppliers')}</span>
           <span className="tab-card-sub">{t('cashOut')}</span>
           <b className="tab-card-value" style={{ color: '#A32D2D' }}>
             {fmt(paidOutList.reduce((s, p) => s + p.amount, 0))}</b>
         </button>
-        <button className={`tab-card ${tab === 'collected' ? 'active' : ''}`} onClick={() => setTab('collected')}>
+        <button className={`tab-card ${tab === 'collected' ? 'active' : ''}`} onClick={() => openTab('collected')}>
           <span className="tab-card-top"><span className="tab-card-icon">💰</span> {t('collectedFromClients')}</span>
           <span className="tab-card-sub">{t('cashIn')}</span>
           <b className="tab-card-value" style={{ color: '#0F6E56' }}>
             {fmt(collectedList.reduce((s, p) => s + p.amount, 0))}</b>
         </button>
-        <button className={`tab-card ${tab === 'free' ? 'active' : ''}`} onClick={() => setTab('free')}>
+        <button className={`tab-card ${tab === 'free' ? 'active' : ''}`} onClick={() => openTab('free')}>
           <span className="tab-card-top"><span className="tab-card-icon">🧾</span> {t('freeSupplier')}</span>
           <span className="tab-card-sub">&nbsp;</span>
         </button>
@@ -437,97 +477,177 @@ export default function AccountsPage() {
 
       {tab === 'free' && <FreeLedger />}
 
-      {tab === 'paidOut' && (
-        <div style={{ overflowX: 'auto' }}><table className="quote-table">
-          <thead><tr>
-            <th>{t('date')}</th><th>{t('supplier')}</th><th>{t('conferences')}</th>
-            <th>{t('amount')}</th><th>{t('method')}</th><th>{t('notes')}</th><th></th>
-          </tr></thead>
-          <tbody>
-            {paidOutList.map((p, i) => (
-              <tr key={p.source + '-' + (p.id || p.invId + '-' + p.idx)}>
-                <td>{p.date || '—'}</td>
-                <td className="wrap"><b>{p.supplier_name}</b></td>
-                <td className="wrap">{p.conference || '—'}</td>
-                <td><b style={{ color: '#A32D2D' }}>{fmt(p.amount)}</b></td>
-                <td>{t(p.method || 'cash') !== (p.method || 'cash') ? t(p.method || 'cash') : p.method}</td>
-                <td className="wrap">{p.note || '—'}</td>
-                <td style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                  {p.receipt_url && (
-                    <>
-                      <button className="mini-btn" onClick={() => openFile(p.receipt_url)}>👁 {t('view')}</button>
-                      <button className="mini-btn" onClick={() => downloadFile(p.receipt_url)}>💾 {t('download')}</button>
-                    </>
-                  )}
-                  {p.source === 'direct' ? (
-                    <>
-                      <button className="mini-btn" onClick={() => setPayForm({
-                        id: p.id, supplier_id: p.supplier_id, name: p.supplier_name,
-                        amount: p.amount, pay_date: p.date, method: p.method || 'cash',
-                        note: p.note || '', receipt_url: p.receipt_url || '',
+      {tab === 'paidOut' && (() => {
+        const { entity, conf } = paidDrill
+        // المستوى 1: قائمة الموردين
+        if (!entity) return (
+          <div className="cards-grid">
+            {paidBySupplier.map((s) => (
+              <button key={s.id} className="entity-card" style={{ textAlign: 'start', cursor: 'pointer', width: '100%' }}
+                onClick={() => setPaidDrill({ entity: s, conf: null })}>
+                <div className="entity-head"><b>🏢 {s.name}</b>
+                  <span className="badge">{s.byConf.size} {t('conferences')}</span></div>
+                <div className="entity-meta">
+                  <span>{t('amount')}: <b style={{ color: '#A32D2D' }}>{fmt(s.total)}</b>
+                    <span className="hint-inline"> — {s.count} {t('paidToSuppliers')}</span></span>
+                </div>
+              </button>
+            ))}
+            {!paidBySupplier.length && <EmptyState />}
+          </div>
+        )
+        // المستوى 2: مؤتمرات المورد المختار
+        if (entity && !conf) return (
+          <div>
+            <button className="mini-btn" style={{ marginBottom: 12 }}
+              onClick={() => setPaidDrill({ entity: null, conf: null })}>→ {t('all')}</button>
+            <h3 style={{ fontSize: 15, margin: '0 0 10px' }}>🏢 {entity.name}</h3>
+            <div className="cards-grid">
+              {[...entity.byConf.values()].sort((a, b) => b.total - a.total).map((c) => (
+                <button key={c.name} className="entity-card" style={{ textAlign: 'start', cursor: 'pointer', width: '100%' }}
+                  onClick={() => setPaidDrill({ entity, conf: c })}>
+                  <div className="entity-head"><b>🎪 {c.name}</b>
+                    <span className="badge">{c.count}</span></div>
+                  <div className="entity-meta">
+                    <span>{t('amount')}: <b style={{ color: '#A32D2D' }}>{fmt(c.total)}</b></span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )
+        // المستوى 3: التفاصيل الكاملة لمورد داخل مؤتمر معين
+        return (
+          <div>
+            <button className="mini-btn" style={{ marginBottom: 12 }}
+              onClick={() => setPaidDrill({ entity, conf: null })}>→ {entity.name}</button>
+            <h3 style={{ fontSize: 15, margin: '0 0 10px' }}>🏢 {entity.name} — 🎪 {conf.name}</h3>
+            <div style={{ overflowX: 'auto' }}><table className="quote-table">
+              <thead><tr>
+                <th>{t('date')}</th><th>{t('amount')}</th><th>{t('method')}</th><th>{t('notes')}</th><th></th>
+              </tr></thead>
+              <tbody>
+                {conf.items.map((p) => (
+                  <tr key={p.source + '-' + (p.id || p.invId + '-' + p.idx)}>
+                    <td>{p.date || '—'}</td>
+                    <td><b style={{ color: '#A32D2D' }}>{fmt(p.amount)}</b></td>
+                    <td>{t(p.method || 'cash') !== (p.method || 'cash') ? t(p.method || 'cash') : p.method}</td>
+                    <td className="wrap">{p.note || '—'}</td>
+                    <td style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                      {p.receipt_url && (
+                        <>
+                          <button className="mini-btn" onClick={() => openFile(p.receipt_url)}>👁 {t('view')}</button>
+                          <button className="mini-btn" onClick={() => downloadFile(p.receipt_url)}>💾 {t('download')}</button>
+                        </>
+                      )}
+                      {p.source === 'direct' ? (
+                        <>
+                          <button className="mini-btn" onClick={() => setPayForm({
+                            id: p.id, supplier_id: p.supplier_id, name: p.supplier_name,
+                            amount: p.amount, pay_date: p.date, method: p.method || 'cash',
+                            note: p.note || '', receipt_url: p.receipt_url || '',
+                          })}>✏️ {t('edit')}</button>
+                          <button className="mini-btn danger" onClick={async () => {
+                            if (!confirm(t('confirmDelete'))) return
+                            await deleteRow('supplier_payments', p.id); load()
+                          }}>✕</button>
+                        </>
+                      ) : (
+                        <button className="mini-btn" onClick={() => {
+                          const sup = suppliers.find((s) => s.id === p.supplier_id)
+                          if (sup) setDetail({ kind: 'payable', row: { supplier: sup } })
+                        }}>{t('details')}</button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table></div>
+          </div>
+        )
+      })()}
+
+      {tab === 'collected' && (() => {
+        const { entity, conf } = collectedDrill
+        // المستوى 1: قائمة العملاء
+        if (!entity) return (
+          <div className="cards-grid">
+            {collectedByClient.map((s) => (
+              <button key={s.id || s.name} className="entity-card" style={{ textAlign: 'start', cursor: 'pointer', width: '100%' }}
+                onClick={() => setCollectedDrill({ entity: s, conf: null })}>
+                <div className="entity-head"><b>👤 {s.name}</b>
+                  <span className="badge">{s.byConf.size} {t('conferences')}</span></div>
+                <div className="entity-meta">
+                  <span>{t('amount')}: <b style={{ color: '#0F6E56' }}>{fmt(s.total)}</b>
+                    <span className="hint-inline"> — {s.count} {t('collectedFromClients')}</span></span>
+                </div>
+              </button>
+            ))}
+            {!collectedByClient.length && <EmptyState />}
+          </div>
+        )
+        // المستوى 2: مؤتمرات العميل المختار
+        if (entity && !conf) return (
+          <div>
+            <button className="mini-btn" style={{ marginBottom: 12 }}
+              onClick={() => setCollectedDrill({ entity: null, conf: null })}>→ {t('all')}</button>
+            <h3 style={{ fontSize: 15, margin: '0 0 10px' }}>👤 {entity.name}</h3>
+            <div className="cards-grid">
+              {[...entity.byConf.values()].sort((a, b) => b.total - a.total).map((c) => (
+                <button key={c.name} className="entity-card" style={{ textAlign: 'start', cursor: 'pointer', width: '100%' }}
+                  onClick={() => setCollectedDrill({ entity, conf: c })}>
+                  <div className="entity-head"><b>🎪 {c.name}</b>
+                    <span className="badge">{c.count}</span></div>
+                  <div className="entity-meta">
+                    <span>{t('amount')}: <b style={{ color: '#0F6E56' }}>{fmt(c.total)}</b></span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )
+        // المستوى 3: التفاصيل الكاملة لعميل داخل مؤتمر معين
+        return (
+          <div>
+            <button className="mini-btn" style={{ marginBottom: 12 }}
+              onClick={() => setCollectedDrill({ entity, conf: null })}>→ {entity.name}</button>
+            <h3 style={{ fontSize: 15, margin: '0 0 10px' }}>👤 {entity.name} — 🎪 {conf.name}</h3>
+            <div style={{ overflowX: 'auto' }}><table className="quote-table">
+              <thead><tr>
+                <th>{t('date')}</th><th>{t('amount')}</th><th>{t('method')}</th><th>{t('notes')}</th><th></th>
+              </tr></thead>
+              <tbody>
+                {conf.items.map((p) => (
+                  <tr key={p.quote.id + '-' + p.index}>
+                    <td>{p.date || '—'}</td>
+                    <td><b style={{ color: '#0F6E56' }}>{fmt(p.amount)}</b></td>
+                    <td>{t(p.method || 'cash') !== (p.method || 'cash') ? t(p.method || 'cash') : p.method}</td>
+                    <td className="wrap">{p.note || '—'}</td>
+                    <td style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                      {p.receipt_url && (
+                        <>
+                          <button className="mini-btn" onClick={() => openFile(p.receipt_url)}>👁 {t('view')}</button>
+                          <button className="mini-btn" onClick={() => downloadFile(p.receipt_url)}>💾 {t('download')}</button>
+                        </>
+                      )}
+                      <button className="mini-btn" onClick={() => setClientPay({
+                        quote: p.quote, index: p.index,
+                        data: { amount: p.amount, date: p.date, method: p.method || 'cash',
+                          note: p.note || '', from_name: p.from_name || '', receipt_url: p.receipt_url || '' },
                       })}>✏️ {t('edit')}</button>
                       <button className="mini-btn danger" onClick={async () => {
                         if (!confirm(t('confirmDelete'))) return
-                        await deleteRow('supplier_payments', p.id); load()
+                        const pays = parsePays(p.quote)
+                        await saveQuotePayments(p.quote, pays.filter((_, j) => j !== p.index))
                       }}>✕</button>
-                    </>
-                  ) : (
-                    <button className="mini-btn" onClick={() => {
-                      const sup = suppliers.find((s) => s.id === p.supplier_id)
-                      if (sup) setDetail({ kind: 'payable', row: { supplier: sup } })
-                    }}>{t('details')}</button>
-                  )}
-                </td>
-              </tr>
-            ))}
-            {!paidOutList.length && (
-              <tr><td colSpan={7}><EmptyState /></td></tr>
-            )}
-          </tbody>
-        </table></div>
-      )}
-
-      {tab === 'collected' && (
-        <div style={{ overflowX: 'auto' }}><table className="quote-table">
-          <thead><tr>
-            <th>{t('date')}</th><th>{t('client')}</th><th>{t('conferences')}</th>
-            <th>{t('amount')}</th><th>{t('method')}</th><th>{t('notes')}</th><th></th>
-          </tr></thead>
-          <tbody>
-            {collectedList.map((p, i) => (
-              <tr key={p.quote.id + '-' + p.index}>
-                <td>{p.date || '—'}</td>
-                <td className="wrap"><b>{p.client_name}</b></td>
-                <td className="wrap">{p.conference}</td>
-                <td><b style={{ color: '#0F6E56' }}>{fmt(p.amount)}</b></td>
-                <td>{t(p.method || 'cash') !== (p.method || 'cash') ? t(p.method || 'cash') : p.method}</td>
-                <td className="wrap">{p.note || '—'}</td>
-                <td style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                  {p.receipt_url && (
-                    <>
-                      <button className="mini-btn" onClick={() => openFile(p.receipt_url)}>👁 {t('view')}</button>
-                      <button className="mini-btn" onClick={() => downloadFile(p.receipt_url)}>💾 {t('download')}</button>
-                    </>
-                  )}
-                  <button className="mini-btn" onClick={() => setClientPay({
-                    quote: p.quote, index: p.index,
-                    data: { amount: p.amount, date: p.date, method: p.method || 'cash',
-                      note: p.note || '', from_name: p.from_name || '', receipt_url: p.receipt_url || '' },
-                  })}>✏️ {t('edit')}</button>
-                  <button className="mini-btn danger" onClick={async () => {
-                    if (!confirm(t('confirmDelete'))) return
-                    const pays = parsePays(p.quote)
-                    await saveQuotePayments(p.quote, pays.filter((_, j) => j !== p.index))
-                  }}>✕</button>
-                </td>
-              </tr>
-            ))}
-            {!collectedList.length && (
-              <tr><td colSpan={7}><EmptyState /></td></tr>
-            )}
-          </tbody>
-        </table></div>
-      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table></div>
+          </div>
+        )
+      })()}
 
       {tab !== 'free' && tab !== 'paidOut' && tab !== 'collected' && <>
       <div className="toolbar" style={{ marginBottom: 10 }}>

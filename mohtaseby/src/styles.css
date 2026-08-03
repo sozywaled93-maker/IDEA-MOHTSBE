@@ -169,7 +169,8 @@ body { margin: 0; background: var(--bg); color: var(--ink); }
 .toolbar .save-btn { padding: 10px 20px; font-size: 14px; }
 
 .cards-grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
-.entity-card { background: var(--card); border:1px solid var(--line); border-radius: var(--radius); padding: 16px; }
+.entity-card { background: var(--card); border:1px solid var(--line); border-radius: var(--radius); padding: 16px; font-family: inherit; }
+button.entity-card { display: block; }
 .entity-head { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom: 4px; }
 .entity-head b { font-size: 15.5px; }
 .badge { background: var(--brand-tint); color: var(--brand-dark); font-size: 12px; font-weight:600; padding: 3px 10px; border-radius: 999px; white-space:nowrap; }
